@@ -580,11 +580,11 @@ export function workBot(b: Bot, bots: Bot[]): Bot {
  */
 export type BrainKind = "claude" | "codex";
 /** The agents a thread can run on (lib/agents.ts AGENTS). "bops" is Bops' own agent, on OpenAI. */
-export type AgentKind = "bops" | "claude" | "codex" | "opencode" | "agy";
+export type AgentKind = "bops" | "claude" | "codex" | "opencode" | "agy" | "hermes";
 /** The CLI agents this build drives on a bot's computer (lib/server/cli-agents.ts DRIVERS). */
 export type CliKind = "claude" | "codex" | "opencode";
 /** Who pays for a thread's AI: Bops AI credit, the user's own plan signed in on the computer, or their own key from the Vault. */
-export type AgentPays = "credit" | "plan" | "key";
+export type AgentPays = "credit" | "plan" | "key" | "local";
 /**
  * One agent in a bot's AI profile: what runs, how it pays, the account it runs on, and the model new threads on
  * it start with. Never secret: a key stays in the Vault, a plan's login stays in its folder on the computer.
@@ -1164,6 +1164,8 @@ export type MemberSend = { state: "sending" | "waiting" | "failed"; error?: stri
 
 /** A session is a long-running task on one screen of a bot's computer, shown as a thread. */
 export type Session = {
+  /** An explicitly started Windows desktop task, using the isolated Podman guest. */
+  pcTask?: true;
   /** Started from a text the user sent a workspace's number: its result is texted back to them from that number. */
   textBack?: { botId: string; to: string };
   /** Started from a message in Slack, Telegram or Discord: its result is posted back there. */
@@ -1626,6 +1628,14 @@ export type KeepDays = 30 | 90 | 365 | null;
 export type DeletedDays = 0 | 7 | 30;
 
 export type AppState = {
+  /** The desktop installation that owns local-only routines for this account. */
+  desktopRoutineDevice?: string;
+  /** Time for previously enabled cloud runners to see the scheduling switch. */
+  desktopRoutineAfter?: number;
+  /** This window is on the PC that owns the local schedule. Set only in the UI response. */
+  desktopRoutinesHere?: boolean;
+  /** Desktop agent controls available in this owner's local window. Set only in the UI response. */
+  desktopAgents?: boolean;
   /** Who the bots work for. Empty until set in Settings. */
   owner?: Owner;
   bots: Bot[];
@@ -1917,7 +1927,8 @@ export function routineOnMac(
  * runner runs them: they run there once it's up, never moved to the Mac. Undefined when nothing holds them
  * up, and for one the Mac runs (routineOnMac).
  */
-export function computerWait(state: Pick<AppState, "bots" | "runners" | "workspaces">, r: Pick<Routine, "botId" | "enabled" | "where" | "goal" | "reminder" | "run" | "fromOutside" | "deliverTo" | "procedure" | "macPick">): string | undefined {
+export function computerWait(state: Pick<AppState, "bots" | "runners" | "workspaces" | "desktopRoutineDevice">, r: Pick<Routine, "botId" | "enabled" | "where" | "goal" | "reminder" | "run" | "fromOutside" | "deliverTo" | "procedure" | "macPick">): string | undefined {
+  if (state.desktopRoutineDevice) return undefined;
   const b = state.bots.find((x) => x.id === r.botId);
   const w = b && workBot(b, state.bots);
   const id = w?.computerId?.toLowerCase();
@@ -2017,6 +2028,8 @@ export type MacState = {
 export type AppAccount = {
   id: string;
   app: string;
+  /** Account connected through a Composio project key saved on one PC. */
+  composioDevice?: string;
   /** The app's own name for it, as shown in the app ("Gmail"). */
   appName: string;
   /** The account's own name, as Composio reports it: an email, a workspace. */
@@ -2045,6 +2058,7 @@ export type AppAccount = {
 export type AppConnecting = {
   id: string;
   app: string;
+  composioDevice?: string;
   appName: string;
   label?: string;
   status: "waiting" | "failed";

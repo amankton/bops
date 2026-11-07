@@ -13,8 +13,9 @@ import { onPostgres } from "./persist";
 import { needsMacPick, needsNoComputer, onRunner, runnerComputerOf, runnerHasWork, runnerReady, runnerRunsOn, runsHere } from "./runner";
 import { awakeSince, sleptSince } from "./awake";
 import { startSession } from "./sessions";
-import { addMessage, bot, getState, id, LEFT_BEHIND, ownerName, ownSession, patchSession, RESTARTED, session, startLanded, stateDevice, stateEpoch, stateReady, stateTooNew, update } from "./store";
+import { addMessage, bot, getState, id, LEFT_BEHIND, ownerName, ownSession, patchSession, RESTARTED, sameState, session, startLanded, stateDevice, stateEpoch, stateReady, stateTooNew, update } from "./store";
 import { findSkill, skillRefId } from "./workspace-skills";
+import { desktopAgentFor, executeDesktopAgent, localRoutinesHere, localRoutinesOnly } from "./desktop-agents";
 
 /**
  * Routines and scheduled asks. Each one belongs to a bot. When one comes due it's a reminder (a message
@@ -520,8 +521,9 @@ async function run(routineId: string, opts: RunOpts): Promise<RoutineRun> {
   const r = routine(routineId);
   const at = Date.now();
   if (!r) return { at, status: "skipped", error: "No such routine." };
+  if (localRoutinesOnly()) return runOnPc(r, at, opts);
   // A reminder or a chat run is never run on a computer (chat is the backend's: runner.ts needsNoComputer): Bops on the Mac runs it, and nothing here records it.
-  if (onRunner() && needsNoComputer(r)) return { at, status: "skipped", error: "Bops on your Mac runs it." };
+  if (onRunner() && needsNoComputer(r)) return { at, status: "skipped", error: "The Bops desktop app runs it." };
   const b = bot(r.botId);
   if (!b) return record(r.id, { at, status: "skipped", error: "Its bot isn't there anymore." });
   if (opts.manual) update(() => (r.lastRunAt = at));
@@ -534,6 +536,52 @@ async function run(routineId: string, opts: RunOpts): Promise<RoutineRun> {
   // Someone else's routine is never a chat run (createRoutine, editRoutine), whatever its state says.
   if (r.run === "chat" && !r.fromOutside) return chatRun(r, b, at, opts);
   return taskRun(r, b, at, opts);
+}
+
+async function runOnPc(r: Routine, at: number, opts: RunOpts): Promise<RoutineRun> {
+  const skipped = (error: string): RoutineRun => ({ at, status: "skipped", error });
+  if (!localRoutinesHere()) return skipped("Select This PC in the Bops window on the PC that will run your routines.");
+  if (opts.manual && opts.manual !== "app") return skipped("Use Run now in the Bops window on your PC.");
+  if ((getState().desktopRoutineAfter ?? 0) > at) return skipped("Cloud scheduling was just turned off. Try again in a moment.");
+  const thread = r.last?.sessionId ? session(r.last.sessionId) : undefined;
+  if (running.has(r.id) || chatPaused(r) || (thread && live(thread) && !strayRun(r, thread))) return skipped("The last run is still going.");
+  const b = bot(r.botId);
+  if (!b) return record(r.id, skipped("Its bot isn't there anymore."));
+  if (opts.manual) update(() => (r.lastRunAt = at));
+  const before = r.last;
+  if (r.fromOutside || r.source || r.deliverTo || r.textTo || r.procedure || r.schedule.kind === "before_event") {
+    return failed(r, at, "This PC supports standalone routines with results in Bops. Remove external delivery or create a standalone routine.", before, true);
+  }
+  if (r.reminder) return remind(r, b, at, opts);
+  const agent = desktopAgentFor(b.id);
+  if (!agent) return failed(r, at, `Make Codex or Claude Code the default in ${b.name}'s AI settings to run this routine on your PC.`, before, true);
+  const ours = sameState();
+  const goal = r.goal;
+  const mode = r.run;
+  const enabled = r.enabled;
+  const stillOurs = () => ours() && routine(r.id)?.last?.at === at;
+  const valid = () => {
+    if (!stillOurs() || !localRoutinesHere() || desktopAgentFor(b.id)?.id !== agent.id) return false;
+    const current = routine(r.id);
+    return current?.botId === b.id && current.goal === goal && current.run === mode && (!enabled || current.enabled);
+  };
+  running.add(r.id);
+  record(r.id, { at, status: "running" });
+  try {
+    const text = await executeDesktopAgent(b, agent, [
+      `Run the scheduled routine "${r.title}".`,
+      goal,
+      r.quiet ? "If there is nothing to report, answer exactly NOTHING." : "",
+    ].filter(Boolean).join("\n\n"), { routine: mode === "chat" ? "text" : "vm", valid, appsAt: { chatId: botChatId(b.id), via: "routine", viaId: r.id } });
+    if (!valid()) throw new Error("This routine was stopped.");
+    if (r.quiet && isNothing(text)) return record(r.id, { at, status: "quiet" });
+    addMessage({ chatId: botChatId(b.id), role: "bot", botId: b.id, agent: agent.id, text, routine: tagOf(r, opts, at) });
+    return record(r.id, { at, status: "ok" }, text);
+  } catch (error) {
+    return stillOurs() ? failed(r, at, (error as Error).message, before, true) : skipped("This routine was stopped.");
+  } finally {
+    running.delete(r.id);
+  }
 }
 
 /**
@@ -698,12 +746,12 @@ export function goalFor(r: Routine, at: number): string {
  * credit stays in the chat. On a computer's runner it's said and sent only once Bops Cloud took the record
  * (runLanded), as a reminder is (remind).
  */
-async function failed(r: Routine, at: number, error: string, before?: RoutineRun): Promise<RoutineRun> {
+async function failed(r: Routine, at: number, error: string, before?: RoutineRun, local = false): Promise<RoutineRun> {
   const again = before?.status === "failed" && before.error === error;
   record(r.id, { at, status: "failed", error });
   if (onRunner() && !(await runLanded(r.id, at))) return notLanded(at);
   if (!again) addMessage({ chatId: botChatId(r.botId), role: "system", text: `"${r.title}" didn't run: ${error}`, routine: { id: r.id, at } });
-  if (!again && error !== NO_CREDIT_FOR_ROUTINES) recordDelivery(r.id, at, await sendOut(r, `"${r.title}" didn't run: ${error}`, undefined, at));
+  if (!local && !again && error !== NO_CREDIT_FOR_ROUTINES) recordDelivery(r.id, at, await sendOut(r, `"${r.title}" didn't run: ${error}`, undefined, at));
   return routine(r.id)?.last ?? { at, status: "failed", error };
 }
 
@@ -1082,6 +1130,8 @@ function endedAtStart() {
  */
 function tick() {
   if (!stateReady() || stateTooNew()) return;
+  const local = localRoutinesOnly();
+  if (local && (!localRoutinesHere() || (getState().desktopRoutineAfter ?? 0) > Date.now())) return noteTick(Date.now());
   endedAtStart();
   // A runner runs its routines while none is due, or while it's sure enough to run one (runnerReady); never
   // while it isn't: that time is as if it was off.
@@ -1092,9 +1142,10 @@ function tick() {
   noteTick(Date.now());
   keepZone();
   syncRoutinesOnStart();
-  pickWhere();
+  if (!local) pickWhere();
   const now = Date.now();
   for (const r of getState().routines.filter((x) => x.enabled)) {
+    if (local && running.has(r.id)) continue;
     // A next time it's skipping that isn't due yet (a skip and a run on two Bops put together:
     // state-merge.ts): the time after it now, whichever Bops runs it, so Orgo wakes nothing for it.
     if (!onRunner() && r.nextRunAt !== undefined && r.nextRunAt > now && skipping(r, r.nextRunAt)) {
@@ -1104,7 +1155,7 @@ function tick() {
       else routineChanged(r.botId);
       continue;
     }
-    const here = runsHere(r, now);
+    const here = local || runsHere(r, now);
     if (!here) continue;
     const tz = zoneOf(r);
     if (r.nextRunAt === undefined) {
@@ -1146,7 +1197,7 @@ function tick() {
       // A thread of the routine's still going (a login it waits on) stays its run: the next run waits for it, and its end is the routine's.
       const t = r.last?.sessionId ? session(r.last.sessionId) : undefined;
       const still = t && live(t) ? stillGoing(r.last, t.id) : {};
-      const missed = !onRunner() ? "Missed while Bops was off or this Mac was asleep" : sleptSince(due) ? "Missed while its computer was asleep" : "Missed while its computer's runner couldn't run routines";
+      const missed = !onRunner() ? `Missed while Bops was off or this ${local ? "PC" : "Mac"} was asleep` : sleptSince(due) ? "Missed while its computer was asleep" : "Missed while its computer's runner couldn't run routines";
       record(r.id, { at: now, status: "skipped", error: `${missed} (it was due ${inSentence(whenText(due, now, tz))}); runs next ${inSentence(whenText(next!, now, tz))}`, ...still });
       continue;
     }

@@ -1,5 +1,6 @@
 "use client";
 
+import { WINDOWS } from "@/lib/platform";
 import { useRef, useState } from "react";
 import {
   accountOf,
@@ -9,8 +10,10 @@ import {
   agentState,
   agentTag,
   aiOf,
+  DESKTOP_AGENTS,
   defaultModel,
   isCli,
+  isDesktopAgent,
   MAX_AGENTS,
   modelsFor,
   OPENCODE_OTHER,
@@ -21,6 +24,7 @@ import {
   sharesComputerWithLogins,
   upper,
 } from "@/lib/agents";
+import { DesktopAgentControls } from "./desktop-agent-controls";
 import { BRAINS_ON, brainRuns, live, threadRunner, waitsForOk, workBot, type AgentKind, type AgentPays, type AppState, type Bot, type BotAgent, type Session } from "@/lib/types";
 import { AgentMark, OpenAiMark, type MarkState } from "./agent-marks";
 import { brainSignIn } from "./brains";
@@ -238,13 +242,14 @@ function AgentEditor({
   const soons = PAYS_SHOWN[x.kind].map((p) => PAYS_SOON[x.kind]?.[p]).filter(Boolean);
   return (
     <div className="flex flex-col gap-2 rounded-[16px] bg-[#FAFAF9] p-3 shadow-[0_0_0_1px_#EFEFEC]">
-      <ModelRow key={`${x.id}:${x.pays}`} agent={x} disabled={ro || busy} onPick={(model) => void go({ op: "update", agentId: x.id, model })} />
-      <div className={`${glassRow} flex-wrap gap-y-1.5`}>
+      {!isDesktopAgent(x) && <ModelRow key={`${x.id}:${x.pays}`} agent={x} disabled={ro || busy} onPick={(model) => void go({ op: "update", agentId: x.id, model })} />}
+      {isDesktopAgent(x) && <DesktopAgentControls botId={b.id} agent={x} readOnly={ro || busy} />}
+      {!isDesktopAgent(x) && <div className={`${glassRow} flex-wrap gap-y-1.5`}>
         <span className="min-w-[72px] flex-1 text-[13px] leading-4">Pays with</span>
         <div role="group" aria-label="Pays with" className="flex shrink-0 gap-0.5 rounded-full bg-black/[0.05] p-[3px]">
           {PAYS_SHOWN[x.kind].map((p: AgentPays) => {
             const soon = PAYS_SOON[x.kind]?.[p];
-            const name = p === "plan" ? (x.kind === "codex" ? "OpenAI plan" : x.pays === "plan" && acct?.signIns?.[0]?.account?.plan ? `${upper(acct.signIns[0].account.plan)} plan` : "Claude plan") : p === "key" ? "Your key" : PAYS_NAMES[p];
+            const name = p === "plan" ? (x.kind === "codex" ? "ChatGPT subscription" : x.pays === "plan" && acct?.signIns?.[0]?.account?.plan ? `${upper(acct.signIns[0].account.plan)} plan` : "Claude plan") : p === "key" ? "Your key" : PAYS_NAMES[p];
             const off = ro || busy || !!soon || x.kind === "bops";
             return (
               <button
@@ -261,9 +266,9 @@ function AgentEditor({
             );
           })}
         </div>
-      </div>
-      {soons.length > 0 && <span className={quiet}>Soon: {soons.join(" ")}</span>}
-      {(x.kind === "claude" || x.kind === "codex") && (accounts.length > 1 || x.pays === "plan") && (
+      </div>}
+      {!isDesktopAgent(x) && soons.length > 0 && <span className={quiet}>Soon: {soons.join(" ")}</span>}
+      {!isDesktopAgent(x) && (x.kind === "claude" || x.kind === "codex") && (accounts.length > 1 || x.pays === "plan") && (
         <div className="flex flex-col items-end gap-1">
         <div className={glassRow}>
           <span className="flex-1 text-[13px] leading-4">Account</span>
@@ -368,13 +373,13 @@ function AddMenu({ bot: b, agents, onAdded }: { bot: Bot; agents: BotAgent[]; on
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useDismiss(open, () => setOpen(false), box);
-  const has = (k: AgentKind) => agents.some((x) => x.kind === k);
+  const has = (k: AgentKind) => agents.some((x) => x.kind === k && !isDesktopAgent(x));
   // Another OpenCode is on a model the bot's OpenCode agents aren't on yet (else it would be the same one).
   const ocModels = new Set(agents.filter((x) => x.kind === "opencode").map((x) => x.model ?? defaultModel("opencode")));
   const ocNext = modelsFor("opencode").find((m) => !ocModels.has(m.id));
   const items: { label: string; body: Record<string, unknown> }[] = [
     { label: has("claude") ? "Another Claude Code account" : "Claude Code", body: { kind: "claude", pays: "plan", ...(has("claude") ? { newAccount: true } : {}) } },
-    ...(!has("codex") ? [{ label: "Codex", body: { kind: "codex", pays: "key" } }] : []),
+    ...(!has("codex") ? [{ label: "Codex · API key", body: { kind: "codex", pays: "key" } }] : []),
     ...(!has("opencode") ? [{ label: "OpenCode", body: { kind: "opencode", pays: "key" } }] : ocNext ? [{ label: `OpenCode on ${ocNext.short}`, body: { kind: "opencode", pays: "key", model: ocNext.id } }] : []),
   ];
   if (agents.length >= MAX_AGENTS) return null;
@@ -409,6 +414,42 @@ function AddMenu({ bot: b, agents, onAdded }: { bot: Bot; agents: BotAgent[]; on
         </div>
       )}
     </div>
+  );
+}
+
+export function DesktopRoster({ state, bot: b, editingAt }: { state: AppState; bot: Bot; editingAt?: string }) {
+  const [editing, setEditing] = useState<string | null>(editingAt ?? null);
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!state.desktopAgents || state.shared) return null;
+  const ai = aiOf(b, state);
+  const edited = ai.agents.find((x) => x.id === editing && isDesktopAgent(x));
+  return (
+    <section aria-label="Desktop agents" className="flex flex-col gap-2 rounded-2xl bg-white/70 p-3 shadow-[0_0_0_1px_#E6E6E3]">
+      <span className="text-[13px] font-semibold">Desktop agents</span>
+      <span className={quiet}>Add an agent for {b.name}&apos;s direct chats on this PC.</span>
+      <div className="flex flex-wrap gap-2">
+        {DESKTOP_AGENTS.map(({ kind, pays, label }) => {
+          const agent = ai.agents.find((x) => x.kind === kind && x.pays === pays);
+          return agent ? (
+            <AgentTile key={kind} agent={agent} bot={b} state={state} isDefault={agent.id === ai.default} on={editing === agent.id} onClick={() => setEditing((value) => value === agent.id ? null : agent.id)} />
+          ) : (
+            <button key={kind} type="button" disabled={adding || ai.agents.length >= MAX_AGENTS} className={`${btnLight} inline-flex items-center gap-1.5`} onClick={async () => {
+              setAdding(true);
+              const result = await change(b.id, { op: "add", kind, pays });
+              setAdding(false);
+              setError(result.error);
+              if (result.added) setEditing(result.added);
+            }}>
+              <AgentMark kind={kind} size={14} /> Add {label}
+            </button>
+          );
+        })}
+      </div>
+      {edited && <AgentEditor key={edited.id} state={state} bot={b} agent={edited} isDefault={edited.id === ai.default} ro={false} />}
+      {ai.agents.length >= MAX_AGENTS && <span className={quiet}>This bot has {MAX_AGENTS} agents. Remove one to add another.</span>}
+      {error && <span role="alert" className="text-[12px] text-[#B42318]">{error}</span>}
+    </section>
   );
 }
 
@@ -543,11 +584,11 @@ export function BotAiSection({
   const ai = aiOf(b, state);
   const ro = !!state.shared;
   const def = ai.agents.find((x) => x.id === ai.default) ?? ai.agents[0];
-  const edited = ai.agents.find((x) => x.id === editing);
+  const edited = ai.agents.find((x) => x.id === editing && !isDesktopAgent(x));
   const said = summary(state, b);
   const shared = BRAINS_ON ? sharesComputerWithLogins(b, state) : undefined;
   const cloud = state.host !== "mac" && b.runsOn !== "mac";
-  const cliAgent = ai.agents.find((x) => x.id === ai.default && isCli(x.kind)) ?? ai.agents.find((x) => isCli(x.kind));
+  const cliAgent = ai.agents.find((x) => x.id === ai.default && isCli(x.kind) && !isDesktopAgent(x)) ?? ai.agents.find((x) => isCli(x.kind) && !isDesktopAgent(x));
   const where = brainRuns(b, state);
   const owner = state.owner?.name ?? "the owner";
   const agy: BotAgent = { id: "agy", kind: "agy", pays: "key" };
@@ -570,9 +611,10 @@ export function BotAiSection({
       )}
       <Fold open={open}>
         <div className={bare ? "flex flex-col gap-3" : "flex flex-col gap-3 border-t border-black/[0.05] px-4 pb-4 pt-3"}>
+          <DesktopRoster key={b.id} state={state} bot={b} editingAt={editingAt} />
           <span className="text-[12px] font-semibold leading-4 text-[#8A8A88]">Agents it can run</span>
           <div className="flex flex-wrap gap-2">
-            {ai.agents.map((x) => (
+            {ai.agents.filter((x) => !isDesktopAgent(x)).map((x) => (
               <AgentTile key={x.id} agent={x} bot={b} state={state} keys={keys} isDefault={x.id === ai.default} on={x.id === editing} onClick={() => setEditing((e) => (e === x.id ? null : x.id))} />
             ))}
             {BRAINS_ON && <AgentTile agent={agy} bot={b} state={state} isDefault={false} on={editing === "agy"} onClick={() => setEditing((e) => (e === "agy" ? null : "agy"))} />}
@@ -649,8 +691,8 @@ export function BotAiSection({
           </div>
           {shared && <SharedWarning bot={b} words={shared} ro={ro || workBot(b, state.bots).id === b.id} />}
           <span className={quiet}>
-            {BRAINS_ON ? `Each thread runs on the agent you pick, with ${b.name}'s own accounts. Chat, memory and calls stay on credit.` : "Chat, threads, memory and calls run on credit."}
-            {BRAINS_ON && where === "some" ? " Threads on your Mac use Bops agent." : ""}
+            {isDesktopAgent(def) ? "Direct text chats use this desktop agent's own login. Bops cloud threads, memory services and voice calls are separate." : BRAINS_ON ? `Each thread runs on the agent you pick, with ${b.name}'s own accounts. Chat, memory and calls stay on credit.` : "Chat, threads, memory and calls run on credit."}
+            {!WINDOWS && BRAINS_ON && where === "some" ? " Threads on your Mac use Bops agent." : ""}
           </span>
           {ro && (
             <span className={quiet}>

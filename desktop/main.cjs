@@ -8,7 +8,6 @@ const { execFile, execFileSync, spawn } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const net = require("node:net");
-const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { startRenderService } = require("./render.cjs");
@@ -16,8 +15,13 @@ const { createUpdates } = require("./updates.cjs");
 const { installAppFrames } = require("./app-frames.cjs");
 const { installPreviewFrames } = require("./preview-frames.cjs");
 const { ownCall } = require("./own-call.cjs");
+const { renderEndpoint, linkServer } = require("./platform.cjs");
+const windows = process.platform === "win32";
+// Isolated profiles for development and packaged smoke checks.
+if (process.env.BOPS_DESKTOP_USER_DATA) app.setPath("userData", path.resolve(process.env.BOPS_DESKTOP_USER_DATA));
 
-const PORT = 3210;
+const PORT = Number(process.env.BOPS_DESKTOP_PORT || (windows ? 3211 : 3210));
+if (!Number.isInteger(PORT) || PORT < 1024 || PORT > 65535) throw new Error("BOPS_DESKTOP_PORT must be a port from 1024 to 65535.");
 const URL = `http://localhost:${PORT}`;
 /*
  * The server listens on 127.0.0.1 only. "localhost" can also mean ::1, where another account on this
@@ -55,8 +59,7 @@ function windowToken() {
  * from an earlier start reaches it too). A path too long for a socket goes in this user's own temp folder.
  */
 function renderSocket() {
-  const file = path.join(app.getPath("userData"), "render.sock");
-  return Buffer.byteLength(file) < 100 ? file : path.join(os.tmpdir(), "bops-render.sock");
+  return renderEndpoint(app.getPath("userData"));
 }
 let renderService;
 
@@ -109,6 +112,7 @@ let shellPath;
 /** The login shell still being asked, so quitting can stop it. */
 let pathProbe;
 function loginPath() {
+  if (windows) return Promise.resolve(process.env.PATH ?? "");
   shellPath ??= new Promise((resolve) => {
     const fallback = [...new Set([...(process.env.PATH ?? "").split(":").filter(Boolean), ...FALLBACK_PATH])].join(":");
     let out = "";
@@ -225,6 +229,8 @@ async function whoAnswers() {
  * its id, name, user, parent and folder. Null when there's none, or it can't be seen (another user's).
  */
 async function listener() {
+  // Windows has no lsof/Unix process groups. Never adopt or stop an unidentified listener.
+  if (windows) return null;
   const out = (await output("lsof", ["-b", "-w", "-nP", `-iTCP:${PORT}`, "-sTCP:LISTEN", "-Fpc"])) ?? "";
   // One entry per process ("p<pid>" then "c<name>"); a port can have more than one (127.0.0.1 and ::1).
   const found = [...out.matchAll(/^p(\d+)\n(?:c(.*))?/gm)].map((m) => ({ pid: Number(m[1]), name: m[2] || "a program" })).filter((l) => l.pid > 1);
@@ -259,6 +265,10 @@ const stoppable = (l) =>
  * Resolves whether the port is free.
  */
 async function stopProcess(pid) {
+  if (windows) {
+    await output("taskkill.exe", ["/PID", String(pid), "/T", "/F"], 5000);
+    return !(await portTaken());
+  }
   const running = () => {
     try {
       process.kill(pid, 0);
@@ -302,23 +312,14 @@ function packagedServer() {
   // .data/ under its working folder and reads vm/ and node_modules/ from there. So it runs in
   // ~/Library/Application Support/Bops/server, where everything but .data links into the bundle.
   const home = serverHome();
-  fs.mkdirSync(path.join(home, ".data"), { recursive: true });
-  for (const name of fs.readdirSync(dir)) {
-    if (name === ".data" || name.startsWith(".env")) continue;
-    const link = path.join(home, name);
-    const st = fs.lstatSync(link, { throwIfNoEntry: false });
-    if (st && !st.isSymbolicLink()) continue;
-    if (st && fs.readlinkSync(link) === path.join(dir, name)) continue;
-    if (st) fs.unlinkSync(link);
-    fs.symlinkSync(path.join(dir, name), link);
-  }
+  linkServer(dir, home);
   // Settings for this Mac (self-hosting, testing) go in ~/Library/Application Support/Bops/.env.local;
   // the app itself ships with no keys.
   let env = {};
   try {
     env = require("node:util").parseEnv(fs.readFileSync(path.join(app.getPath("userData"), ".env.local"), "utf8"));
   } catch {}
-  const relay = path.join(process.resourcesPath, "bin", "orgo-relay");
+  const relay = path.join(process.resourcesPath, "bin", windows ? "orgo-relay.exe" : "orgo-relay");
   // The ingot command for the bots' computers, which the server copies onto one that works on an app (lib/server/ingot.ts).
   const ingot = path.join(process.resourcesPath, "bin", "ingot");
   // What the server prints, for support: ~/Library/Logs/Bops/server.log. Each start adds to it (an
@@ -390,13 +391,15 @@ async function spawnServer() {
           HOSTNAME: packaged.env.BOPS_LISTEN_ALL === "1" ? "0.0.0.0" : "127.0.0.1",
         },
         stdio: ["ignore", packaged.log, packaged.log],
-        detached: true,
+        detached: !windows,
+        windowsHide: true,
       })
-    : spawn("npx", ["next", "dev", "--port", String(PORT)], {
+    : spawn(nodeBinary(), [path.join(REPO, "node_modules", "next", "dist", "bin", "next"), "dev", "--hostname", "127.0.0.1", "--port", String(PORT)], {
         cwd: REPO,
-        env: { ...process.env, PATH, BOPS_UI_TOKEN: windowToken(), BOPS_RENDER_SOCKET: renderSocket() },
+        env: { ...process.env, PATH, PORT: String(PORT), ...(windows ? { NEXT_PUBLIC_BOPS_BRAINS: "1" } : {}), ELECTRON_RUN_AS_NODE: "1", BOPS_UI_TOKEN: windowToken(), BOPS_RENDER_SOCKET: renderSocket() },
         stdio: "ignore",
-        detached: true,
+        detached: !windows,
+        windowsHide: true,
       });
   if (packaged) fs.closeSync(packaged.log);
   server = child;
@@ -695,8 +698,7 @@ async function createWindow() {
     minWidth: 1180,
     minHeight: 640,
     title: "Bops",
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 14, y: 14 },
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 14, y: 14 } } : { autoHideMenuBar: true }),
     backgroundColor: "#FFFFFF",
     icon: ICON,
     // Web pages open as tabs inside Bops (see components/app/panel-tabs.tsx). The preload lets the
@@ -863,7 +865,10 @@ async function askScreen() {
  * Your Mac, live. The page asks for the displays and windows it can show, then streams one with
  * getUserMedia (chromeMediaSource "desktop"). macOS asks the user once to allow Screen Recording.
  */
-ipcMain.handle("mac-screens", async () => {
+ipcMain.handle("mac-screens", async (event) => {
+  if (windows && (event.sender !== mainWin?.webContents || !event.senderFrame?.url.startsWith(URL + "/"))) {
+    return { access: "restricted", displays: [], sources: [] };
+  }
   // The first time, ask: that lists Bops under Screen Recording and shows macOS's prompt.
   if (screenStatus() === "not-determined") await askScreen();
   const access = screenStatus();
@@ -879,10 +884,10 @@ ipcMain.handle("mac-screens", async () => {
   const win = mainWin && !mainWin.isDestroyed() ? mainWin : BrowserWindow.getAllWindows().find((w) => w.isVisible());
   const bopsOn = win ? String(screen.getDisplayMatching(win.getBounds()).id) : undefined;
   if (access !== "granted") return { access, displays, sources: [], bopsOn };
-  const list = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 0, height: 0 } });
+  const list = await desktopCapturer.getSources({ types: ["screen", "window"], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
   return { access, displays, bopsOn, sources: list.map((s) => ({ id: s.id, name: s.name, displayId: s.display_id || undefined })) };
 });
-ipcMain.handle("mac-screen-settings", () => shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"));
+ipcMain.handle("mac-screen-settings", () => shell.openExternal(PANES.screen));
 
 /*
  * What Bops asks macOS for, all in one place (components/app/setup.tsx, and Settings → This Mac):
@@ -893,7 +898,11 @@ ipcMain.handle("mac-screen-settings", () => shell.openExternal("x-apple.systempr
  * here (its pane opens); Automation is asked for up front, app by app (askAutomation), so no prompt
  * comes up in the middle of a task.
  */
-const PANES = {
+const PANES = windows ? {
+  screen: "ms-settings:privacy-graphicscaptureprogrammatic",
+  microphone: "ms-settings:privacy-microphone",
+  notifications: "ms-settings:notifications",
+} : {
   screen: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
   microphone: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
   accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
@@ -901,7 +910,7 @@ const PANES = {
   fullDisk: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
   automation: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
 };
-const PERM_IDS = Object.keys(PANES);
+const PERM_IDS = ["screen", "microphone", "notifications", "accessibility", "fullDisk", "automation"];
 const mac = process.platform === "darwin";
 // macOS keeps the Screen Recording answer a process saw at launch: a grant made later only takes
 // effect after a restart. The status at launch tells the page when to offer one.
@@ -1057,7 +1066,8 @@ function askAutomation() {
 }
 
 async function permStatus(id) {
-  if (!mac) return id === "notifications" ? notifyStatus() : "granted";
+  if (windows && id === "microphone") return systemPreferences.getMediaAccessStatus(id);
+  if (!mac) return id === "notifications" ? notifyStatus() : ["accessibility", "fullDisk", "automation"].includes(id) ? "restricted" : "granted";
   if (id === "screen") return screenStatus();
   if (id === "microphone") return systemPreferences.getMediaAccessStatus(id);
   if (id === "accessibility") return systemPreferences.isTrustedAccessibilityClient(false) ? "granted" : "not-determined";
@@ -1076,7 +1086,7 @@ ipcMain.handle("perm-status", async (_, ids) => {
 ipcMain.handle("perm-automation-apps", () => (mac ? automationApps() : null));
 ipcMain.handle("perm-request", async (_, id) => {
   if (!PERM_IDS.includes(id)) return "unknown";
-  if (!mac) return id === "notifications" ? askNotify() : "granted";
+  if (!mac) return id === "notifications" ? askNotify() : permStatus(id);
   if (id === "microphone") {
     await systemPreferences.askForMediaAccess("microphone").catch(() => false);
   } else if (id === "screen") {
@@ -1201,6 +1211,7 @@ async function stopOtherServer(pid) {
  * by its bar, resize it; closing it puts the previews back in the corner of Bops.
  */
 ipcMain.handle("mac-pip-open", () => {
+  if (windows) return false;
   if (pipWin && !pipWin.isDestroyed()) return pipWin.focus();
   const area = screen.getDisplayMatching(mainWin?.getBounds() ?? { x: 0, y: 0, width: 1, height: 1 }).workArea;
   pipWin = new BrowserWindow({
@@ -1364,7 +1375,7 @@ app.whenReady().then(() => {
   mainLog(`Bops ${app.getVersion()} opening (pid ${process.pid})`);
   if (process.platform === "darwin" && fs.existsSync(ICON)) app.dock.setIcon(nativeImage.createFromPath(ICON));
   // Release builds only: not `npm run app`, nor a build that runs the source folder (desktop/repo.json).
-  if (isRelease()) {
+  if (isRelease() && process.platform === "darwin") {
     updates = createUpdates({ autoUpdater, app, fs, path, note: updateNote, send: sendUpdate });
     // macOS logging out or shutting down quits Bops itself: that quit isn't held (see before-quit).
     powerMonitor.on("shutdown", () => (systemQuit = true));
@@ -1399,10 +1410,10 @@ app.on("window-all-closed", () => app.quit());
 let quitStopped = false;
 let systemQuit = false;
 app.on("before-quit", (e) => {
-  if (quitStopped || restarting || systemQuit || !updates?.ready()) return;
+  if (quitStopped || restarting || systemQuit || (!windows && !updates?.ready())) return;
   quitStopped = true;
   e.preventDefault();
-  void Promise.race([stopForRestart(`Quit: installing Bops ${updates.state().version}`), sleep(10_000)]).finally(() => app.quit());
+  void Promise.race([stopForRestart(updates?.ready() ? `Quit: installing Bops ${updates.state().version}` : "Quit Bops"), sleep(windows ? 25_000 : 10_000)]).finally(() => app.quit());
 });
 
 /** Stops the server Bops started or uses (and the bots' browsers). Says whether there was one. */
@@ -1411,6 +1422,13 @@ function stopServer() {
   if (!pid) return false;
   server = undefined;
   watchAdopted(undefined);
+  if (windows) {
+    // stopForRestart saved state through the authenticated local API before terminating the tree.
+    try {
+      execFileSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, timeout: 5000, stdio: "ignore" });
+    } catch {}
+    return true;
+  }
   try {
     process.kill(-pid, "SIGTERM");
   } catch {
@@ -1437,7 +1455,7 @@ app.on("will-quit", () => {
     }
   const pid = server?.pid ?? adopted;
   // A server too stuck to act on SIGTERM would outlive Bops: stopped hard once its exit work's 8s are up.
-  if (stopServer() && pid)
+  if (stopServer() && pid && !windows)
     try {
       spawn("/bin/sh", ["-c", `sleep 10; kill -KILL -${pid} 2>/dev/null || kill -KILL ${pid} 2>/dev/null`], { detached: true, stdio: "ignore" }).unref();
     } catch {}

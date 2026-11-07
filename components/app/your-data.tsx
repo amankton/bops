@@ -1,5 +1,6 @@
 "use client";
 
+import { SECRET_STORAGE } from "@/lib/platform";
 import { useEffect, useState } from "react";
 import {
   CLEAR_OPTIONS,
@@ -28,7 +29,7 @@ import { post } from "./ui";
 
 /**
  * Settings → Your data (lib/privacy.ts, app/api/privacy): where each kind of the user's things is kept and how
- * it goes, with this Mac's numbers; how long chats and calls are kept (a shorter choice says what it deletes
+ * it goes, with this computer's numbers; how long chats and calls are kept (a shorter choice says what it deletes
  * now and asks once); what a delete leaves behind, with Recently deleted to restore from (fewer days says
  * how many copies go, here now and on the other Macs at their next check, and asks once too); and what none
  * of it covers yet. Asking never fails open: when Bops can't say what a choice deletes, it still asks, in
@@ -81,7 +82,7 @@ function heldLine(item: DeletedItem) {
 }
 
 
-/** A count of this Mac's files as a chip says it: "12 · 3.4 MB", or the size alone for a log. */
+/** A count of this computer's files as a chip says it: "12 · 3.4 MB", or the size alone for a log. */
 function countLine(c: HereCount, unit?: [string, string]) {
   const size = `${sizeOf(c.bytes)}${c.more ? "+" : ""}`;
   return c.count === undefined || !unit ? size : `${num(c.count)}${c.more && unit[0] !== "profile" ? "+" : ""} ${c.count === 1 ? unit[0] : unit[1]} · ${size}`;
@@ -118,13 +119,13 @@ function WhereKept({ info }: { info: PrivacyInfo }) {
   const rows: { kind: string; where: string; how: string; extra?: React.ReactNode }[] = [
     {
       kind: "Logins and tokens",
-      where: "Kept in this Mac's Keychain. A bot signing in fills them into that site's page, never into a chat or a model.",
+      where: `Kept in ${SECRET_STORAGE}. A bot signing in fills them into that site's page.`,
       how: "Remove one in Logins, or disconnect its channel.",
     },
     { kind: "Keys bots use", where: "Orgo's vault, encrypted. Bops keeps only their names.", how: "Delete one in Logins." },
     {
       kind: "Chats, routines and settings",
-      where: "Bops Cloud, Orgo's database, so your Macs and iPhone match.",
+      where: "Bops Cloud, Orgo's database, so your devices stay in sync.",
       how: "Delete a message from its menu, or several from a chat's menu, or delete or keep them for less time below.",
       extra: <span className="text-[12px] leading-4 text-[#3A3A38]">{many(info.messages, "message")}</span>,
     },
@@ -132,8 +133,8 @@ function WhereKept({ info }: { info: PrivacyInfo }) {
     { kind: "Skill, app and table files", where: "Orgo's file storage.", how: "Delete a skill, app or CRM file where you see it." },
     {
       kind: "Images, pages, call notes, browser profiles, last screens",
-      where: "The files stay on this Mac.",
-      how: "Images, pages, call notes and last screens go with your chats when you keep them for less time. Browser profiles keep your bots' logins on this Mac.",
+      where: "The files stay on this computer.",
+      how: "Images, pages, call notes and last screens go with your chats when you keep them for less time. Browser profiles keep your bots' logins on this computer.",
       extra: (
         <span className="flex flex-wrap gap-1.5">
           {here.map(([name, line]) => (
@@ -266,7 +267,7 @@ export function YourData() {
     }
     await send({ keepDays: k });
   };
-  /** Fewer days for what's deleted always asks first: how many copies go on this Mac now, and that the other Macs' go at their next check. */
+  /** Fewer days for what's deleted always asks first: how many copies go on this computer now, and that the other Macs' go at their next check. */
   const pickDeleted = async (d: DeletedDays) => {
     setAsking(null);
     setAskingDeleted(null);
@@ -292,7 +293,7 @@ export function YourData() {
         <div className="flex flex-col gap-0.5">
           <span className="text-[13px] font-medium">Keep chats and calls</span>
           <span className={sub}>
-            Older messages and finished threads are deleted from Bops Cloud and all your Macs, with each Mac&apos;s call notes, last screens, and the images and pages no kept message shows.
+            Older messages and finished threads are deleted from Bops Cloud and all your computers, with each computer&apos;s call notes, last screens, and the images and pages no kept message shows.
           </span>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -319,7 +320,7 @@ export function YourData() {
         <div className="flex flex-col gap-2 border-t border-[#F0F0EE] pt-2.5">
           <div className="flex flex-col gap-0.5">
             <span className="text-[13px] font-medium">Delete now</span>
-            <span className={sub}>Deletes messages and finished threads once, from Bops Cloud and all your Macs. What you keep above stays as it is.</span>
+            <span className={sub}>Deletes messages and finished threads once, from Bops Cloud and all your computers. What you keep above stays as it is.</span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {CLEAR_OPTIONS.map((k) => (
@@ -373,8 +374,8 @@ export function YourData() {
           <span className={sub}>
             Messages, threads and group chats you delete leave your chats and Bops Cloud at once.
             {info.deletedDays
-              ? " A copy stays on this Mac only, so you can restore it. Bops Cloud never gets the copy, and what you kept between us is never copied."
-              : " Its images on this Mac go too."}
+              ? " A copy stays on this computer only, so you can restore it. Bops Cloud never gets the copy, and what you kept between us is never copied."
+              : " Its images on this computer go too."}
           </span>
         </div>
         <div className="flex flex-wrap gap-2">

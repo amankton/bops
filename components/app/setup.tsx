@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppState } from "@/lib/types";
+import { DESKTOP_NAME, SYSTEM_SETTINGS, THIS_COMPUTER, WINDOWS } from "@/lib/platform";
 import { Spinner } from "./mascot";
 import { useMacApp } from "./mac-screens";
 import { RestartAsk } from "./restart";
@@ -103,7 +104,7 @@ function useRelay(every: number) {
   const read = async (res: Response) => {
     const j = (await res.json().catch(() => ({}))) as Partial<RelayInfo> & { error?: string };
     if (res.status === 404) return { available: false, on: false, running: false, routedComputers: [] } satisfies RelayInfo;
-    if (!res.ok && j.available === undefined) throw new Error(j.error || j.reason || "Couldn't reach routing on this Mac.");
+    if (!res.ok && j.available === undefined) throw new Error(j.error || j.reason || "Couldn't reach routing on this computer.");
     return { available: !!j.available, on: !!j.on, reason: j.reason, device: j.device, running: !!j.running, online: j.online, routedComputers: j.routedComputers ?? [] } satisfies RelayInfo;
   };
   const load = useCallback(async () => {
@@ -253,7 +254,7 @@ const ICONS = {
 };
 
 const COPY: Record<"screen" | "microphone" | "notifications", { title: string; line: string }> = {
-  screen: { title: "Screen recording", line: "See your Mac live in Bops, and watch bots work on it." },
+  screen: { title: WINDOWS ? "Screen viewing" : "Screen recording", line: WINDOWS ? "View a display or window from the Your PC tab." : "See your Mac live in Bops, and watch bots work on it." },
   microphone: { title: "Microphone", line: "Talk to your bots on a call." },
   notifications: { title: "Notifications", line: "Hear from bots when something needs you." },
 };
@@ -264,7 +265,7 @@ function PermissionCard({ id, items }: { id: "screen" | "microphone" | "notifica
   const s = perms.status?.[id];
   const copy = COPY[id];
   if (!perms.inApp)
-    return <Card icon={ICONS[id]} title={copy.title} line={copy.line} tone="none" status="Needs the Bops app for Mac" />;
+    return <Card icon={ICONS[id]} title={copy.title} line={copy.line} tone="none" status="Needs the Bops desktop app" />;
   if (!s) return <Card icon={ICONS[id]} title={copy.title} line={copy.line} tone="none" status="Checking" />;
   // Screen Recording turned on while Bops was open: macOS applies it on the next launch.
   const restart = id === "screen" && (perms.restart || (s !== "granted" && sentToSettings.has("screen")));
@@ -275,14 +276,14 @@ function PermissionCard({ id, items }: { id: "screen" | "microphone" | "notifica
         : "Allowed"
       : s === "restricted"
         ? id === "notifications"
-          ? "Not available on this Mac"
-          : "Blocked by your Mac's settings or admin"
+          ? `Not available on this ${DESKTOP_NAME}`
+          : `Blocked by ${SYSTEM_SETTINGS} or your administrator`
         : s === "denied"
           ? restart
             ? "Turn on Bops in System Settings, then restart Bops"
-            : "Off. Turn it on in System Settings"
+            : `Off. Turn it on in ${SYSTEM_SETTINGS}`
           : id === "notifications" && s === "unknown"
-            ? "Asked. Check System Settings if none showed"
+            ? `Check ${SYSTEM_SETTINGS} if no notification appeared`
             : "Not asked yet";
   const tone: Tone = s === "granted" && !(id === "screen" && perms.restart) ? "ok" : s === "not-determined" || s === "unknown" ? "off" : "todo";
   return (
@@ -298,7 +299,7 @@ function PermissionCard({ id, items }: { id: "screen" | "microphone" | "notifica
         </button>
       ) : s === "denied" || (s === "unknown" && id !== "notifications") ? (
         <button onClick={() => void openSettings(id)} className={restart ? light : dark}>
-          Open System Settings
+          Open {SYSTEM_SETTINGS}
         </button>
       ) : null}
     </Card>
@@ -307,9 +308,10 @@ function PermissionCard({ id, items }: { id: "screen" | "microphone" | "notifica
 
 function RelayCard({ items }: { items: Items }) {
   const { info, busy, error, turn } = items.relay;
-  const line = "Your bots' computers go online through this Mac, so websites see your home internet.";
-  if (!info) return <Card icon={ICONS.relay} title="Route through this Mac" line={line} tone="none" status="Checking" />;
-  if (!info.available) return <Card icon={ICONS.relay} title="Route through this Mac" line={line} tone="none" status={info.reason ? `Not available yet. ${info.reason}` : "Not available yet"} />;
+  const line = "Your bots' computers go online through this computer, so websites see your home internet.";
+  const title = WINDOWS ? "Route through this PC" : "Route through this Mac";
+  if (!info) return <Card icon={ICONS.relay} title={title} line={line} tone="none" status="Checking" />;
+  if (!info.available) return <Card icon={ICONS.relay} title={title} line={line} tone="none" status={info.reason ? `Not available yet. ${info.reason}` : "Not available yet"} />;
   const n = info.routedComputers.length;
   // On by default: the relay may still be starting (or reconnecting) while it's on.
   const connecting = !info.running || info.online === false;
@@ -319,7 +321,7 @@ function RelayCard({ items }: { items: Items }) {
       ? `On${info.device ? ` as ${info.device.name}` : ""}${connecting ? ", connecting" : ""}. ${n ? `${n} computer${n === 1 ? "" : "s"} routed` : "No computers routed yet"}`
       : "Off. Bots' computers use Orgo's connection";
   return (
-    <Card icon={ICONS.relay} title="Route through this Mac" line={line} tone={error ? "todo" : info.on ? (connecting ? "todo" : "ok") : "off"} status={status}>
+    <Card icon={ICONS.relay} title={title} line={line} tone={error ? "todo" : info.on ? (connecting ? "todo" : "ok") : "off"} status={status}>
       <button disabled={busy} onClick={() => void turn(!info.on)} className={info.on ? light : dark}>
         {busy ? <Spinner size={11} color={info.on ? "#0A0A0A" : "#FFFFFF"} /> : info.on ? "Turn off" : "Turn on"}
       </button>
@@ -369,7 +371,7 @@ export const SETUP_NEEDS: Record<SetupItem, string> = {
   screen: "Screen recording is off",
   microphone: "Microphone is off",
   notifications: "Notifications are off",
-  relay: "Routing through this Mac is off",
+  relay: `Routing through this ${DESKTOP_NAME} is off`,
 };
 
 /* ---------------- In Settings ---------------- */
@@ -392,7 +394,7 @@ export function ThisMacSettings({ state }: { state: AppState }) {
   return (
     <div className="flex flex-col gap-2 px-[22px] pt-4">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[13px] font-semibold">This Mac</span>
+        <span className="text-[13px] font-semibold">{THIS_COMPUTER}</span>
         <span className="flex items-center gap-1.5">
           {items.perms.inApp && ASKED.some((id) => items.perms.status?.[id] === "not-determined") && (
             <button onClick={() => void allowAll(items)} className={light}>
@@ -407,7 +409,7 @@ export function ThisMacSettings({ state }: { state: AppState }) {
         </span>
       </div>
       <Cards items={items} />
-      <FullAccessCard items={items} />
+      {WINDOWS ? <p className="text-[12px] leading-5 text-pencil">Connect desktop agents in a bot&apos;s AI settings. Choose This PC below to run routines in a Podman Local VM.</p> : <FullAccessCard items={items} />}
       <UpdateSettings />
     </div>
   );

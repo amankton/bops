@@ -1,5 +1,6 @@
 "use client";
 
+import { SECRET_STORAGE } from "@/lib/platform";
 import { useEffect, useState } from "react";
 import type { Bot, ScreenRead, VaultLogin } from "@/lib/types";
 import { Mascot } from "./mascot";
@@ -128,7 +129,7 @@ export function SignInCard({
           </button>
         </div>
         <span className="text-[11px] leading-[15px] text-[#9A9A98]">
-          Goes straight into the page on {b.name}&apos;s screen. {save ? "Saved logins stay in your Mac's Keychain." : "Bops doesn't keep it."} No AI sees it.
+          Goes straight into the page on {b.name}&apos;s screen. {save ? `Saved logins stay in ${SECRET_STORAGE}.` : "Bops doesn't keep it."} No AI sees it.
         </span>
       </form>
     </CardShell>

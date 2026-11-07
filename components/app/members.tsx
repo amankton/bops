@@ -335,7 +335,7 @@ function ReadyView({ info, state, act, onRetry, onUpgrade }: { info: Ready; stat
           {!bots && <Notice>{WORDS.sharedOpen}</Notice>}
           {keys && <Notice>{info.fullAccess === "off" ? `${WORDS.keysOff}${someoneElse ? ` ${WORDS.keysOffAnyone}` : ""}` : WORDS.keysHeld}</Notice>}
           {info.host === "mac" && (
-            <Notice>Right now your bots work on this Mac, whose screens people you add never see. They see the chats and threads of the bots you pick, and your bots&apos; cloud computers.</Notice>
+            <Notice>People you add see the chats, threads and cloud computers you share. Local screens stay private.</Notice>
           )}
         </div>
       )}

@@ -47,6 +47,15 @@ export function toShared(state: Blob, device: string): Blob {
   if (Array.isArray(state.chats)) out.chats = state.chats.map((c: Blob) => strip(c, ["typing", "asking"]));
   const mine: Blob = {};
   for (const k of PER_MAC) if (state[k] !== undefined) mine[k] = state[k];
+  // The credentials for these accounts live on one PC. Keep their records with that device so
+  // other clients (including older ones) never try to reconcile them against the cloud project.
+  if (Array.isArray(state.accounts)) {
+    const local = state.accounts.filter((a) => a?.composioDevice);
+    if (local.length) {
+      mine.composioAccounts = local;
+      out.accounts = state.accounts.filter((a) => !a?.composioDevice);
+    }
+  }
   // Full access is this Mac's alone, kept here (full-access.ts): never in the cloud.
   if (isObject(mine.mac)) mine.mac = strip(mine.mac, ["fullAccess"]);
   const macs: Blob = { ...(isObject(state.macs) ? state.macs : {}) };
@@ -65,6 +74,7 @@ export function fromShared(blob: Blob, device: string): Blob {
   for (const k of NEVER_SYNCED) if (k !== "macs") delete out[k];
   const mine = isObject(blob.macs) && isObject(blob.macs[device]) ? blob.macs[device] : {};
   for (const k of PER_MAC) out[k] = mine[k];
+  if (Array.isArray(mine.composioAccounts)) out.accounts = [...(Array.isArray(out.accounts) ? out.accounts : []), ...mine.composioAccounts];
   // ...and never taken from it: nothing in the cloud may turn it on.
   if (isObject(out.mac)) out.mac = strip(out.mac, ["fullAccess"]);
   return out;

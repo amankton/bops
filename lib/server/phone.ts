@@ -1047,7 +1047,7 @@ export function cloudCall(p: CloudCallPayload, eventId: string) {
     addMessage({
       chatId: botChatId(b.id),
       role: "system",
-      text: `While your Mac was away, ${left}${p.transcript?.trim() ? `\n\n${p.transcript.trim().slice(0, 6000)}` : ""}`,
+      text: `While your computer was offline, ${left}${p.transcript?.trim() ? `\n\n${p.transcript.trim().slice(0, 6000)}` : ""}`,
       sms: { dir: "in", from: p.from ?? "", to: lineOf(b)?.phone ?? b.phone ?? "", id: key },
       call: { seconds, phone: p.from },
       ...(m ? { ping: true } : {}),
@@ -1059,7 +1059,7 @@ export function cloudCall(p: CloudCallPayload, eventId: string) {
   addMessage({
     chatId: botChatId(b.id),
     role: "system",
-    text: `While your Mac was away, you${said}${p.transcript?.trim() ? `\n\n${p.transcript.trim().slice(0, 6000)}` : ""}`,
+    text: `While your computer was offline, you${said}${p.transcript?.trim() ? `\n\n${p.transcript.trim().slice(0, 6000)}` : ""}`,
     sms: { dir: "in", from: p.from ?? "", to: lineOf(b)?.phone ?? b.phone ?? "", id: key },
     call: { seconds, phone: p.from },
   });

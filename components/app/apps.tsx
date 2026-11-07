@@ -18,27 +18,28 @@ import { ago, post, teamOf } from "./ui";
 /** One app the picker can offer (from /api/apps/catalog). */
 type CatalogApp = { app: string; name: string; about?: string; tags: string[]; auth: "oauth" | "key" | "open"; tools?: number };
 
-let catalogOnce: Promise<CatalogApp[]> | null = null;
+type CatalogResult = { apps: CatalogApp[]; available?: boolean; canSetUp?: boolean; onThisPC?: boolean; error?: string };
+let catalogRequest: Promise<CatalogResult> | null = null;
 function useCatalog() {
-  const [apps, setApps] = useState<CatalogApp[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<CatalogResult | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let gone = false;
-    catalogOnce ??= fetch("/api/apps/catalog")
-      .then((r) => r.json() as Promise<{ apps: CatalogApp[]; error?: string }>)
-      .then((j) => {
-        if (j.error && !j.apps.length) throw new Error(j.error);
-        return j.apps;
-      });
-    catalogOnce.then((a) => !gone && setApps(a)).catch((e: Error) => {
-      catalogOnce = null;
-      if (!gone) setError(e.message);
+    catalogRequest ??= fetch("/api/apps/catalog", { cache: "no-store" })
+      .then((r) => r.json() as Promise<CatalogResult>)
+      .finally(() => { catalogRequest = null; });
+    catalogRequest.then((data) => !gone && setResult(data)).catch(() => {
+      if (!gone) setResult({ apps: [], error: "Couldn't reach the app catalog." });
     });
     return () => {
       gone = true;
     };
-  }, []);
-  return { apps, error };
+  }, [attempt]);
+  return {
+    apps: result && !result.error ? result.apps : null,
+    result,
+    reload: () => { setResult(null); setAttempt((n) => n + 1); },
+  };
 }
 
 /** An app's real logo on a white tile; its first letter if the logo won't load. A vault key (STRIPE_SECRET_KEY) is a key. */
@@ -118,13 +119,16 @@ export function Connecting({ state }: { state: AppState }) {
 }
 
 /** Nothing connected yet: the apps most teams start with, one tap each. */
-export function QuickStart({ onPick }: { onPick: (app: string) => void }) {
-  const { apps } = useCatalog();
+export function QuickStart({ onPick }: { onPick: (app?: string) => void }) {
+  const { apps, result } = useCatalog();
   // Once the catalog is in, only apps it offers (signed in with Orgo, the ones that can connect through Bops Cloud).
-  const pick = (apps ? FEATURED_APPS.map((a) => apps.find((x) => x.app === a)).filter((x): x is CatalogApp => !!x) : FEATURED_APPS.map((a) => ({ app: a, name: a }))).slice(0, 8);
+  const pick = (apps ?? []).filter((a) => FEATURED_APPS.includes(a.app)).sort((a, b) => FEATURED_APPS.indexOf(a.app) - FEATURED_APPS.indexOf(b.app)).slice(0, 8);
   return (
     <div className="flex flex-col gap-2.5 rounded-2xl px-4 py-4 shadow-[0_0_0_1px_#ECECEA]">
       <span className="text-[12.5px] leading-[17px] text-[#6B6B6B]">Connect the apps you work in, and your bots use them directly: faster and steadier than clicking through them on a computer.</span>
+      {result?.available === false && result.canSetUp && (
+        <button onClick={() => onPick()} className="self-start rounded-full bg-ink px-3 py-1.5 text-[12px] font-semibold text-white">Set up Composio</button>
+      )}
       <div className="grid grid-cols-4 gap-1.5">
         {pick.map((a) => (
           <button key={a.app} onClick={() => onPick(a.app)} className="flex items-center gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-[#F7F7F6]">
@@ -475,6 +479,8 @@ export function BotChips<T extends string>({
 
 /* ---------------- The app picker ---------------- */
 
+const APPS_PER_PAGE = 50;
+
 /** Rank the catalog for a search: name first, then the slug, then what it does and its categories. */
 function search(apps: CatalogApp[], q: string) {
   const s = q.trim().toLowerCase();
@@ -493,24 +499,37 @@ function search(apps: CatalogApp[], q: string) {
     .map((a, i) => ({ a, r: score(a), i }))
     .filter((x) => x.r < 9)
     .sort((x, y) => x.r - y.r || x.i - y.i)
-    .slice(0, 60)
     .map((x) => x.a);
 }
 
 /**
- * Add an app: search the whole catalog (or pick a popular one), then say who may use the account
+ * Add an app: browse or search the catalog, then say who may use the account
  * before signing in, so it's ready the moment the sign-in finishes. A card in the Logins page where
  * Connect asked for it (logins.tsx), as A website login's form is, never a dialog over the app.
  */
 export function AppPicker({ state, start, replaces, onClose }: { state: AppState; start?: string; replaces?: string; onClose: () => void }) {
-  const { apps, error } = useCatalog();
+  const { apps, result, reload } = useCatalog();
+  const [editingKey, setEditingKey] = useState(false);
   const [q, setQ] = useState("");
+  const [browse, setBrowse] = useState(false);
+  const [page, setPage] = useState(0);
   const [cursor, setCursor] = useState(0);
   const [chosen, setChosen] = useState<string | undefined>(start);
   const results = useMemo(() => (apps ? search(apps, q) : []), [apps, q]);
   const featured = useMemo(() => (apps ? FEATURED_APPS.map((a) => apps.find((x) => x.app === a)).filter((x): x is CatalogApp => !!x) : []), [apps]);
-  const list = q.trim() ? results : featured;
+  const alphabetical = useMemo(() => apps?.toSorted((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }) || a.app.localeCompare(b.app)) ?? [], [apps]);
+  const query = q.trim();
+  const popular = !query && !browse;
+  const matches = query ? results : alphabetical;
+  const offset = page * APPS_PER_PAGE;
+  const list = popular ? featured : matches.slice(offset, offset + APPS_PER_PAGE);
   const connected = new Set((state.accounts ?? []).map((a) => a.app));
+  const rows = useRef<HTMLDivElement>(null);
+  const goToPage = (next: number) => {
+    setPage(next);
+    setCursor(0);
+    if (rows.current) rows.current.scrollTop = 0;
+  };
   // Esc closes the picker, and only the picker: the Settings page it's on stays (preventDefault says so).
   useEffect(() => {
     const esc = (e: KeyboardEvent) => {
@@ -524,7 +543,9 @@ export function AppPicker({ state, start, replaces, onClose }: { state: AppState
   // Brought into view as it opens, under the page's heading.
   const card = useRef<HTMLDivElement>(null);
   useEffect(() => card.current?.scrollIntoView?.({ block: "nearest" }), []);
-  const info = chosen ? (apps?.find((a) => a.app === chosen) ?? { app: chosen, name: (state.accounts ?? []).find((a) => a.app === chosen)?.appName ?? chosen, tags: [], auth: "oauth" as const }) : null;
+  const info = chosen && apps && result?.available !== false
+    ? (apps.find((a) => a.app === chosen) ?? { app: chosen, name: (state.accounts ?? []).find((a) => a.app === chosen)?.appName ?? chosen, tags: [], auth: "oauth" as const })
+    : null;
 
   return (
       <div
@@ -534,7 +555,17 @@ export function AppPicker({ state, start, replaces, onClose }: { state: AppState
         data-app-picker
         className="motion-rise-in flex max-h-[min(560px,70vh)] w-full flex-col overflow-hidden rounded-[20px] bg-white shadow-[0_0_0_1px_#E6E6E3,0_12px_32px_-18px_#00000040]"
       >
-        {info ? (
+        {editingKey || (result?.available === false && result.canSetUp) ? (
+          <ComposioSetup
+            replacing={!!result?.onThisPC}
+            onCancel={() => result?.onThisPC ? setEditingKey(false) : onClose()}
+            onSaved={() => {
+              setEditingKey(false);
+              reload();
+              void post("/api/apps", {}, "PATCH").catch(() => {});
+            }}
+          />
+        ) : info ? (
           <ConnectStep state={state} app={info} replaces={replaces} onBack={start ? onClose : () => setChosen(undefined)} onDone={onClose} hasOne={connected.has(info.app)} />
         ) : (
           <>
@@ -545,15 +576,18 @@ export function AppPicker({ state, start, replaces, onClose }: { state: AppState
               </svg>
               <input
                 autoFocus
+                aria-label="Search apps"
                 value={q}
                 onChange={(e) => {
                   setQ(e.target.value);
-                  setCursor(0);
+                  goToPage(0);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                  if (list.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
                     e.preventDefault();
-                    setCursor((c) => (e.key === "ArrowDown" ? Math.min(c + 1, list.length - 1) : Math.max(c - 1, 0)));
+                    const next = e.key === "ArrowDown" ? Math.min(cursor + 1, list.length - 1) : Math.max(cursor - 1, 0);
+                    setCursor(next);
+                    rows.current?.querySelectorAll("button")[next]?.scrollIntoView?.({ block: "nearest" });
                   }
                   if (e.key === "Enter" && list[cursor]) setChosen(list[cursor].app);
                 }}
@@ -562,25 +596,43 @@ export function AppPicker({ state, start, replaces, onClose }: { state: AppState
               />
               <kbd className="shrink-0 rounded-md bg-[#F2F2F0] px-1.5 py-0.5 text-[11px] text-[#6B6B6B]">esc</kbd>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
-              {!apps ? (
-                <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-[#9A9A98]">{error ? `Couldn't load the apps: ${error}` : <><Spinner size={14} /> Loading apps…</>}</div>
-              ) : !q.trim() ? (
-                <>
-                  <div className="px-2 pb-1.5 pt-1 text-[12px] font-semibold text-[#9A9A98]">Popular for business</div>
-                  <div className="grid grid-cols-3 gap-0.5">
-                    {featured.map((a, i) => (
+            {apps && result?.available !== false && apps.length > 0 && (
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[#F0F0EE] px-4 py-2">
+                <span className="text-[12px] font-semibold text-[#6B6B6B]">{query ? "Search results" : browse ? "All apps, A to Z" : "Popular for business"}</span>
+                <button
+                  onClick={() => {
+                    setBrowse(!browse);
+                    setQ("");
+                    goToPage(0);
+                  }}
+                  className="rounded-full bg-[#F2F2F0] px-3 py-1.5 text-[12px] font-semibold text-ink hover:bg-[#E6E6E3]"
+                >
+                  {browse ? "Popular apps" : `Browse all ${apps.length.toLocaleString()} apps`}
+                </button>
+              </div>
+            )}
+            <div ref={rows} className="min-h-0 flex-1 overflow-y-auto p-2">
+              {result?.error ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-[#6B6B6B]" role="status">
+                  {result.error}
+                  <button onClick={reload} className="font-medium text-ink underline">Try again</button>
+                </div>
+              ) : !apps ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-[#9A9A98]"><Spinner size={14} /> Loading apps…</div>
+              ) : result?.available === false ? (
+                <div className="py-10 text-center text-[13px] text-[#6B6B6B]">Connected apps aren&apos;t configured.</div>
+              ) : popular && list.length ? (
+                <div className="grid grid-cols-3 gap-0.5">
+                    {list.map((a, i) => (
                       <button key={a.app} onMouseEnter={() => setCursor(i)} onClick={() => setChosen(a.app)} className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-left ${cursor === i ? "bg-[#F4F4F2]" : ""}`}>
                         <AppLogo app={a.app} name={a.name} size={26} />
                         <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium leading-[18px]">{a.name}</span>
                         {connected.has(a.app) && <Check />}
                       </button>
                     ))}
-                  </div>
-                  <div className="px-2 pb-1 pt-3 text-[12px] leading-4 text-[#9A9A98]">Type to search every app.</div>
-                </>
-              ) : results.length ? (
-                results.map((a, i) => (
+                </div>
+              ) : list.length ? (
+                list.map((a, i) => (
                   <button key={a.app} onMouseEnter={() => setCursor(i)} onClick={() => setChosen(a.app)} className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left ${cursor === i ? "bg-[#F4F4F2]" : ""}`}>
                     <AppLogo app={a.app} name={a.name} size={30} />
                     <span className="flex min-w-0 flex-1 flex-col">
@@ -593,13 +645,74 @@ export function AppPicker({ state, start, replaces, onClose }: { state: AppState
                     {a.tags[0] && <span className="shrink-0 rounded-full bg-[#F2F2F0] px-2 py-0.5 text-[11px] capitalize leading-4 text-[#6B6B6B]">{a.tags[0]}</span>}
                   </button>
                 ))
-              ) : (
+              ) : query ? (
                 <div className="py-10 text-center text-[13px] text-[#9A9A98]">No app called &ldquo;{q}&rdquo;. Bots can still use it on their computer.</div>
+              ) : (
+                <div className="py-10 text-center text-[13px] text-[#6B6B6B]">{apps.length ? "Browse all apps or search by name." : "No apps available."}</div>
               )}
             </div>
+            {!popular && list.length > 0 && (
+              <div role="navigation" aria-label="App catalog pages" className="flex shrink-0 items-center justify-between gap-2 border-t border-[#F0F0EE] px-4 py-2 text-[12px]">
+                <span aria-live="polite" className="text-[#6B6B6B]">{(offset + 1).toLocaleString()} to {(offset + list.length).toLocaleString()} of {matches.length.toLocaleString()}</span>
+                {matches.length > APPS_PER_PAGE && (
+                  <div className="flex gap-1.5">
+                    <button disabled={page === 0} onClick={() => goToPage(page - 1)} className="rounded-full bg-[#F2F2F0] px-3 py-1.5 font-semibold hover:bg-[#E6E6E3] disabled:opacity-40">Previous</button>
+                    <button disabled={offset + APPS_PER_PAGE >= matches.length} onClick={() => goToPage(page + 1)} className="rounded-full bg-[#F2F2F0] px-3 py-1.5 font-semibold hover:bg-[#E6E6E3] disabled:opacity-40">Next</button>
+                  </div>
+                )}
+              </div>
+            )}
+            {result?.onThisPC && <button onClick={() => setEditingKey(true)} className="border-t border-[#F0F0EE] px-4 py-2.5 text-left text-[12.5px] font-medium text-[#6B6B6B] hover:bg-[#F7F7F6]">Composio settings</button>}
           </>
         )}
       </div>
+  );
+}
+
+function ComposioSetup({ replacing, onCancel, onSaved }: { replacing: boolean; onCancel: () => void; onSaved: () => void }) {
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <form className="flex flex-col gap-3.5 p-5" onSubmit={async (e) => {
+      e.preventDefault();
+      setBusy(true);
+      setError("");
+      try {
+        const res = await fetch("/api/apps/composio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key }),
+        });
+        const result = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || !result.ok) {
+          setError(result.error ?? "Couldn't save the project key.");
+          return;
+        }
+        setKey("");
+        onSaved();
+      } catch {
+        setError("Couldn't save the project key. Try again.");
+      } finally {
+        setBusy(false);
+      }
+    }}>
+      <div>
+        <div className="text-[17px] font-semibold">{replacing ? "Composio settings" : "Set up Composio"}</div>
+        <p className="mt-1 text-[13px] leading-5 text-[#6B6B6B]">Connect apps through your Composio project. Open <a href="https://dashboard.composio.dev/" target="_blank" rel="noreferrer" className="font-medium text-ink underline">Composio</a>, then go to Project Settings → API Keys.</p>
+      </div>
+      <label className="flex flex-col gap-1.5 text-[13px] font-medium">
+        Project API key
+        <input autoFocus type="password" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" spellCheck={false} required maxLength={512} disabled={busy}
+          className="rounded-xl border border-[#E6E6E3] px-3 py-2 font-normal outline-none focus:border-ink" />
+      </label>
+      <p className="text-[12px] text-[#6B6B6B]">Bops verifies the key with Composio and saves it in Windows secure storage on this PC.</p>
+      {error && <span role="alert" className="text-[12px] text-[#B42318]">{error}</span>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={busy} className="rounded-full px-3 py-2 text-[13px] font-medium hover:bg-[#F2F2F0] disabled:opacity-50">Cancel</button>
+        <button type="submit" disabled={busy || !key.trim()} className="rounded-full bg-ink px-3.5 py-2 text-[13px] font-semibold text-white disabled:opacity-50">{busy ? "Verifying…" : "Verify and save"}</button>
+      </div>
+    </form>
   );
 }
 
@@ -653,12 +766,15 @@ export function ConnectStep({ state, app: a, replaces, hasOne, onBack, onDone }:
   const connect = async () => {
     setBusy(true);
     setError(null);
-    const res = await post("/api/apps", { app: a.app, label: label || undefined, replaces, grant: grantOf(bots, level, check, replaces) });
-    const j = (await res.json()) as { error?: string };
-    if (j.error) {
-      setError(j.error);
+    try {
+      const res = await post("/api/apps", { app: a.app, label: label || undefined, replaces, grant: grantOf(bots, level, check, replaces) });
+      const j = (await res.json()) as { error?: string };
+      if (!res.ok || j.error) throw new Error(j.error ?? "Couldn't start the sign-in. Try again.");
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't start the sign-in. Try again.");
       setBusy(false);
-    } else onDone();
+    }
   };
   const how =
     a.auth === "open"

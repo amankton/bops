@@ -5,7 +5,7 @@ import { workBot, workspaceOf, type AppState } from "@/lib/types";
 import { AskInPlace, currentWorkspace, post } from "./ui";
 
 /**
- * Settings, General: whether the open workspace's bots answer with every Mac closed (chat through Bops Cloud: its bots'
+ * Settings, General: whether the open workspace's bots answer with every desktop app closed (chat through Bops Cloud: its bots'
  * computers answer). Bops Cloud keeps the switch and writes it on the workspace (Workspace.chatOn, chatAuto): it turns
  * on by itself once the bots' computers are ready, unless the owner chose the Mac here. Turned off, it's the Mac's for
  * good (until turned on again here, which gives Bops Cloud the say back). Where Bops Cloud won't take it back
@@ -18,17 +18,17 @@ export type ChatSwitchView = { wsId: string; on: boolean; line: string; closed: 
 
 /** The words under the switch, as the workspace stands. */
 export const CHAT_LINES = {
-  cloud: "Your bots answer from their own computers, even with every Mac closed.",
-  soon: "Your bots will answer from their own computers once those are ready. Until then your Mac answers.",
-  mac: "Your bots answer from your Mac while Bops is open.",
-  closed: "Your bots answer from your Mac while Bops is open. Orgo turns this on for your workspace.",
+  cloud: "Your bots answer from their own computers, even with every desktop app closed.",
+  soon: "Your bots will answer from their own computers once those are ready. Until then your computer answers.",
+  mac: "Your bots answer from your computer while Bops is open.",
+  closed: "Your bots answer from your computer while Bops is open. Orgo turns this on for your workspace.",
 };
 /** The same, for an Admin of a workspace shared with them: the owner's bots and Mac. */
 export const CHAT_LINES_SHARED = {
-  cloud: "The bots answer from their own computers, even with every Mac closed.",
-  soon: "The bots will answer from their own computers once those are ready. Until then the owner's Mac answers.",
-  mac: "The bots answer from the owner's Mac while Bops is open there.",
-  closed: "The bots answer from the owner's Mac while Bops is open there. Orgo turns this on for the workspace.",
+  cloud: "The bots answer from their own computers, even with every desktop app closed.",
+  soon: "The bots will answer from their own computers once those are ready. Until then the owner's computer answers.",
+  mac: "The bots answer from the owner's computer while Bops is open there.",
+  closed: "The bots answer from the owner's computer while Bops is open there. Orgo turns this on for the workspace.",
 };
 /** Asked before turning it off where it can't be turned back on here (ChatSwitchView.closed). */
 export const OFF_ASK = { title: "Turn this off?", line: "You can't turn it back on here. Orgo turns it on for your workspace." };
@@ -86,14 +86,14 @@ export function ChatSwitch({ state }: { state: AppState }) {
       <span className="text-[13px] font-semibold">Chat</span>
       <div className="flex items-center gap-3 rounded-[14px] p-3.5 shadow-[0_0_0_1px_#E6E6E3]">
         <div className="flex flex-1 flex-col gap-0.5">
-          <span className="text-[13px] font-medium">{state.shared ? "Answer with every Mac closed" : "Answer with your Mac closed"}</span>
+          <span className="text-[13px] font-medium">{state.shared ? "Answer with every desktop app closed" : "Answer with your computer closed"}</span>
           <span className="text-[12px] leading-4 text-[#6B6B6B]">{view.line}</span>
         </div>
         <button
           type="button"
           role="switch"
           aria-checked={view.on}
-          aria-label={state.shared ? "Answer with every Mac closed" : "Answer with your Mac closed"}
+          aria-label={state.shared ? "Answer with every desktop app closed" : "Answer with your computer closed"}
           disabled={busy || (view.closed && !view.on)}
           onClick={() => (view.closed && view.on ? setAsking(seen) : void flip())}
           className={`relative h-[22px] w-[38px] shrink-0 rounded-full transition-colors disabled:opacity-60 ${view.on ? "bg-ink" : "bg-[#E6E6E3]"}`}

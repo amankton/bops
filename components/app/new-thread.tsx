@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent as KeyEvent, type RefObject } from "react";
-import { AGENTS, agentLabel, agentName, agentState, aiOf, modelsFor, modelShort, OPENCODE_OTHER, paysLabel, readyAgents, upper, type AgentState } from "@/lib/agents";
+import { AGENTS, agentLabel, agentName, agentState, aiOf, isDesktopAgent, modelsFor, modelShort, OPENCODE_OTHER, paysLabel, readyAgents, upper, type AgentState } from "@/lib/agents";
 import { workBot, workspaceOf, type AppState, type Bot, type BotAgent, type Session } from "@/lib/types";
+import { WINDOWS } from "@/lib/platform";
 import { AgentMark } from "./agent-marks";
+import { readDesktopAgentInfo, type DesktopAgentInfo } from "./desktop-agent-controls";
 import { useVaultKeyNames } from "./keys";
 import { undash } from "./side-group";
 import { post } from "./ui";
@@ -54,13 +56,14 @@ export function notReadyWords(st: AgentState) {
 export const DefaultPill = () => <span className="shrink-0 rounded-full bg-[#F2F2F0] px-1.5 text-[10.5px] font-medium leading-[14px] text-[#3A3A38]">Default</span>;
 
 /** The bot's agents as tiles to pick one from. `onSetUp`: an agent that isn't ready, to its editor in the profile. */
-export function AgentPick({ state, bot: b, value, keys, onPick, onSetUp }: { state: AppState; bot: Bot; value: string; keys?: ReadonlySet<string>; onPick: (x: BotAgent) => void; onSetUp?: (agentId: string) => void }) {
+export function AgentPick({ state, bot: b, value, keys, onPick, onSetUp, disabledReason }: { state: AppState; bot: Bot; value: string; keys?: ReadonlySet<string>; onPick: (x: BotAgent) => void; onSetUp?: (agentId: string) => void; disabledReason?: (agent: BotAgent) => string | undefined }) {
   const ai = aiOf(b, state);
   const at = { bot: b, state };
   return (
     <div role="group" aria-label="Agent" className="flex flex-wrap gap-2">
       {ai.agents.map((x) => {
-        const st = agentState(x, b, state, keys);
+        const reason = disabledReason?.(x);
+        const st = reason ? { ready: false, line: reason } : agentState(x, b, state, keys);
         const on = x.id === value;
         return (
           <div key={x.id} className={`flex min-w-[140px] max-w-full flex-col rounded-[14px] bg-white ${on ? "shadow-[0_0_0_1.5px_#0A0A0A]" : "shadow-[0_0_0_1px_#E6E6E3] hover:shadow-[0_0_0_1px_#C9C9C6]"}`}>
@@ -118,7 +121,14 @@ export function NewThread({
 }) {
   const ai = aiOf(b, state);
   const keys = useBotKeys(state, b);
-  const ready = readyAgents(b, state, keys);
+  const pc = WINDOWS && !state.shared && state.host === "mac";
+  const blocked = (agent: BotAgent) => {
+    if (pc) {
+      if (!state.desktopRoutinesHere) return "Select This PC in Settings";
+      if (!isDesktopAgent(agent) || agent.kind === "hermes") return "Choose a Codex or Claude Code subscription for Podman";
+    } else if (isDesktopAgent(agent)) return "Select This PC in Settings for computer tasks";
+  };
+  const ready = pc ? ai.agents.filter((agent) => !blocked(agent)) : readyAgents(b, state, keys);
   const first = ready.find((x) => x.id === agentId) ?? ready.find((x) => x.id === ai.default) ?? ready[0] ?? ai.agents[0];
   const [agent, setAgent] = useState<BotAgent>(first);
   const [model, setModel] = useState<string>(first.model ?? modelsFor(first.kind)[0]?.id ?? "");
@@ -139,7 +149,7 @@ export function NewThread({
     if (!goal.trim()) return;
     setBusy(true);
     try {
-      const res = await post("/api/sessions", { botId: b.id, goal: goal.trim(), agentId: agent.id, ...(model && model !== "auto" ? { model } : {}) });
+      const res = await post("/api/sessions", { botId: b.id, goal: goal.trim(), agentId: agent.id, ...(pc ? { pc: true } : {}), ...(model && model !== "auto" ? { model } : {}) });
       const j = (await res.json().catch(() => ({}))) as Session & { error?: string };
       if (res.ok && j.id) onStarted(j);
       else setError(undash(j.error ?? "It didn't start. Try again."));
@@ -171,6 +181,7 @@ export function NewThread({
           bot={b}
           value={agent.id}
           keys={keys}
+          disabledReason={blocked}
           onSetUp={onSetUp ? (id) => (onClose(), onSetUp(id)) : undefined}
           onPick={(x) => {
             setAgent(x);
@@ -191,7 +202,7 @@ export function NewThread({
             ▾
           </span>
         </label>
-        <span className="text-[12px] leading-4 text-[#6B6B6B]">Pays with: {paysLabel(agent, state, workBot(b, state.bots).computerId)}</span>
+        <span className="text-[12px] leading-4 text-[#6B6B6B]">{pc && "Podman Local VM on this PC · "}Pays with: {paysLabel(agent, state, workBot(b, state.bots).computerId)}</span>
         <textarea
           value={goal}
           onChange={(e) => setGoal(e.target.value)}
@@ -220,36 +231,80 @@ export function NewThread({
   );
 }
 
-/**
- * The agent new tasks from the message box run on, for its chip: the pick when it's ready, else the Default, as it
- * is (the server starts them there, ready or not), and the agents there are to pick from: the ready ones and the
- * Default. Shown only to the owner, and only when there's a choice.
- */
-export function boxAgents(state: AppState, b: Bot, value: string | null, keys?: ReadonlySet<string>) {
+type DesktopStatuses = Partial<Record<string, DesktopAgentInfo | null>>;
+
+export function useDesktopComposerStatuses(state: AppState, b: Bot | undefined) {
+  const botId = state.desktopAgents && !state.shared ? b?.id : undefined;
+  const ids = botId && b ? aiOf(b, state).agents.filter(isDesktopAgent).map((x) => x.id).sort().join(",") : "";
+  const scope = `${botId}:${ids}`;
+  const [snapshot, setSnapshot] = useState<{ scope: string; statuses: DesktopStatuses }>();
+  useEffect(() => {
+    if (!botId || !ids) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      const entries = await Promise.all(ids.split(",").map(async (id) => {
+        const status = await readDesktopAgentInfo(botId, id, controller.signal).catch(() => null);
+        return [id, status] as const;
+      }));
+      if (controller.signal.aborted) return;
+      setSnapshot({ scope, statuses: Object.fromEntries(entries) });
+      timer = setTimeout(() => void refresh(), 10_000);
+    };
+    void refresh();
+    return () => { controller.abort(); clearTimeout(timer); };
+  }, [botId, ids, scope]);
+  return snapshot?.scope === scope ? snapshot.statuses : undefined;
+}
+
+function desktopUnavailable(x: BotAgent, info: DesktopAgentInfo | null | undefined) {
+  const name = AGENTS[x.kind].name;
+  if (info === undefined) return { label: "checking…", detail: `Checking ${name} on this PC.` };
+  if (info === null) return { label: "check failed", detail: `Couldn't check ${name} on this PC. Bops will retry.` };
+  if (!info.installed) return { label: "not installed", detail: `Install ${x.kind === "codex" ? "Codex CLI" : name} on this PC first.` };
+  if (x.kind === "hermes") return info.fullAccess ? undefined : { label: "access off", detail: "Enable Full access for this Hermes agent in AI settings." };
+  if (!info.signedIn) {
+    const login = x.kind === "claude" ? "claude auth login --claudeai" : "codex login";
+    return { label: "not signed in", detail: `Sign in to your subscription on this PC with ${login}.` };
+  }
+}
+
+/** Direct chat can also use desktop agents. Task and thread pickers still use readyAgents. */
+export function boxAgents(state: AppState, b: Bot, value: string | null, keys?: ReadonlySet<string>, desktop?: DesktopStatuses) {
   const ai = aiOf(b, state);
-  const ready = readyAgents(b, state, keys);
+  const taskAgents = readyAgents(b, state, keys);
+  const local = state.desktopAgents && !state.shared ? ai.agents.filter(isDesktopAgent) : [];
   const def = ai.agents.find((x) => x.id === ai.default) ?? ai.agents[0];
-  const options = ready.some((x) => x.id === def.id) ? ready : [def, ...ready];
-  const picked = ready.find((x) => x.id === value);
-  return { ready, def, options, picked, now: picked ?? def, defReady: ready.some((x) => x.id === def.id) };
+  const options = [...taskAgents, ...local];
+  if (!options.some((x) => x.id === def.id)) options.unshift(def);
+  const unavailable = (x: BotAgent) => {
+    if (local.some((y) => y.id === x.id)) return desktopUnavailable(x, desktop?.[x.id]);
+    if (isDesktopAgent(x)) return { label: "not ready", detail: "Use this agent in your own desktop window." };
+    if (!taskAgents.some((y) => y.id === x.id)) {
+      const status = agentState(x, b, state, keys);
+      return { label: notReadyWords(status), detail: status.line };
+    }
+  };
+  // Keep an explicit desktop pick when its readiness changes, so sending cannot switch providers.
+  const picked = options.find((x) => x.id === value && (isDesktopAgent(x) ? local.includes(x) : !unavailable(x)));
+  return { def, options, picked, now: picked ?? def, unavailable };
 }
 
 /**
  * The message box's agent chip (Warp's split chip): only for the owner, and only when there's a choice of agent.
- * The pick holds for this chat in this window until changed (or until it isn't ready), and goes with each message
- * as the agent the threads it starts run on (Message.agent). The Default that isn't ready shows as it is.
+ * The pick goes with each message as Message.agent. Desktop choices show their status in the menu.
  */
-export function AgentChipPick({ state, bot: b, value, keys, defaultOpen = false, onPick }: { state: AppState; bot: Bot; value: string | null; keys?: ReadonlySet<string>; defaultOpen?: boolean; onPick: (agentId: string | null) => void }) {
+export function AgentChipPick({ state, bot: b, value, keys, desktop, defaultOpen = false, onPick }: { state: AppState; bot: Bot; value: string | null; keys?: ReadonlySet<string>; desktop?: DesktopStatuses; defaultOpen?: boolean; onPick: (agentId: string | null) => void }) {
   const [open, setOpen] = useState(defaultOpen);
   const box = useRef<HTMLDivElement>(null);
   const menuId = useId();
   useDismiss(open, () => setOpen(false), box);
-  const { options, now, def, defReady } = boxAgents(state, b, value, keys);
+  const { options, now, def, unavailable } = boxAgents(state, b, value, keys, desktop);
   if (options.length < 2 || state.shared) return null;
   const at = { bot: b, state };
-  const off = (x: BotAgent) => (x.id === def.id && !defReady ? notReadyWords(agentState(x, b, state, keys)) : "");
-  // Its name, or (not ready) its kind and why, which a narrow chip mustn't cut off; the menu and its name say which.
-  const label = off(now) ? `${AGENTS[now.kind].name} · ${off(now)}` : agentName(now, at);
+  const status = unavailable(now);
+  const label = status ? `${AGENTS[now.kind].name} · ${status.label}` : agentName(now, at);
+  const title = isDesktopAgent(now) ? `Replies on this PC using ${paysLabel(now, state)}` : value && now.id === value ? `Tasks from this message run on ${agentLabel(now, at)}` : `Tasks run on ${b.name}'s Default, ${agentLabel(now, at)}`;
   return (
     <div ref={box} className="relative shrink-0">
       <button
@@ -258,45 +313,49 @@ export function AgentChipPick({ state, bot: b, value, keys, defaultOpen = false,
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={`Agent for new tasks: ${agentName(now, at)}${off(now) ? `, ${off(now)}` : ""}`}
-        title={value && now.id === value ? `Tasks from this message run on ${agentLabel(now, at)}` : `Tasks run on ${b.name}'s Default, ${agentLabel(now, at)}${off(now) ? `, which is ${off(now)}` : ""}`}
+        aria-label={`Agent for new tasks: ${agentName(now, at)}${status ? `, ${status.label}` : ""}`}
+        title={status?.detail ?? title}
         className="flex h-[30px] items-center gap-1.5 rounded-full px-2 text-[12.5px] leading-4 text-[#3A3A38] hover:bg-[#F2F2F0]"
       >
         <AgentMark kind={now.kind} size={15} />
-        <span className={`max-w-[170px] truncate ${off(now) ? "text-[#B54708]" : ""}`}>{label}</span>
+        <span className={`max-w-[170px] truncate ${status ? "text-[#B54708]" : ""}`}>{label}</span>
         <span aria-hidden className="text-[9px] text-[#9A9A98]">
           ▾
         </span>
       </button>
       {open && (
         <div id={menuId} role="menu" aria-label="Agent for new tasks" className="absolute bottom-[calc(100%+6px)] right-0 z-20 flex min-w-[280px] flex-col rounded-[14px] bg-white p-1 shadow-[0_0_0_1px_#0000000F,0_12px_32px_-12px_#00000040]">
-          {options.map((x) => (
-            <button
-              key={x.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={x.id === now.id}
-              aria-disabled={!!off(x) || undefined}
-              onClick={() => {
-                if (off(x)) return;
-                onPick(x.id === def.id ? null : x.id);
-                setOpen(false);
-              }}
-              className={`flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-[13px] leading-4 hover:bg-[#F6F6F4] ${x.id === now.id ? "bg-[#F6F6F4]" : ""} ${off(x) ? "cursor-default opacity-60" : ""}`}
-            >
-              <AgentMark kind={x.kind} size={15} />
-              <span className="flex-1">
-                {agentLabel(x, at)}
-                {off(x) ? ` · ${off(x)}` : ""}
-              </span>
-              {x.id === def.id && <span className="text-[11px] text-[#6B6B6B]">Default</span>}
-            </button>
-          ))}
+          {options.map((x) => {
+            const off = unavailable(x);
+            return (
+              <button
+                key={x.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={x.id === now.id}
+                aria-disabled={!!off || undefined}
+                title={off?.detail}
+                onClick={() => {
+                  if (off) return;
+                  onPick(x.id === def.id ? null : x.id);
+                  setOpen(false);
+                }}
+                className={`flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-[13px] leading-4 hover:bg-[#F6F6F4] ${x.id === now.id ? "bg-[#F6F6F4]" : ""} ${off ? "cursor-default opacity-60" : ""}`}
+              >
+                <AgentMark kind={x.kind} size={15} />
+                <span className="flex-1">
+                  {agentLabel(x, at)}
+                  {off ? ` · ${off.label}` : ""}
+                </span>
+                {x.id === def.id && <span className="text-[11px] text-[#6B6B6B]">Default</span>}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-/** The line above the box while a pick other than the Default holds: what runs the tasks this message starts. */
-export const pickLine = (x: BotAgent, b?: Bot, state?: Pick<AppState, "bots" | "brains">) => `Tasks from this message run on ${upper(agentLabel(x, b && state ? { bot: b, state } : undefined))}`;
+/** The line above the box while a pick other than the Default holds. */
+export const pickLine = (x: BotAgent, b?: Bot, state?: Pick<AppState, "bots" | "brains">) => `${isDesktopAgent(x) ? "Replies on this PC using" : "Tasks from this message run on"} ${upper(agentLabel(x, b && state ? { bot: b, state } : undefined))}`;

@@ -1,5 +1,6 @@
 "use client";
 
+import { WINDOWS } from "@/lib/platform";
 import { useEffect, useState } from "react";
 import { defaultAgent, isCli } from "@/lib/agents";
 import { BRAIN_KEYS, BRAIN_NAMES, BRAINS_ON, brainOf, brainRuns, CLI_NAMES, planName, signInOn, threadRunner, workBot, type AppState, type Bot, type Brain, type BrainAuth, type BrainKind, type CliKind, type Session } from "@/lib/types";
@@ -286,7 +287,7 @@ function BrainRow({ state, brain: x, keys, onShowScreen }: { state: AppState; br
           choices={BRAIN_CHOICES}
           level={who}
           // Picked, but its tasks all run on this Mac, where Bops agent runs them (brainRuns).
-          note={(b) => (who(b) === "may" ? "not picked" : who(b) === "use" && brainRuns(b, state) === "none" ? "on your Mac, Bops agent" : undefined)}
+          note={(b) => (who(b) === "may" ? "not picked" : who(b) === "use" && brainRuns(b, state) === "none" ? (WINDOWS ? "available for cloud tasks" : "on your Mac, Bops agent") : undefined)}
           what={x.name}
           disabled={busy}
           onSet={(b, level) => void run(() => call("/api/brains", { id: x.id, botId: b.id, level }, "PATCH"))}
@@ -487,7 +488,7 @@ export function AddBrain({
         <button type="button" disabled={busy} onClick={onDone} className={light}>
           {made ? "Done" : "Cancel"}
         </button>
-        {auth === "plan" && state.host === "mac" && <span className="text-[12px] leading-4 text-[#6B6B6B]">Your bots work on this Mac, so there&apos;s no bot computer to sign in on.</span>}
+        {auth === "plan" && state.host === "mac" && <span className="text-[12px] leading-4 text-[#6B6B6B]">{WINDOWS ? "Select Cloud to sign in on a bot computer." : "Your bots work on this Mac, so there’s no bot computer to sign in on."}</span>}
         {error && (
           <span role="alert" className="min-w-0 text-[12px] leading-4 text-[#B42318]">
             {error}
@@ -526,7 +527,7 @@ export function BotBrain({ state, bot: b, onShowScreen, className }: { state: Ap
         : signedIn
           ? `${BRAIN_NAMES[now.kind]} on your ${planName(signedIn.account?.plan)}`
           : `Not signed in on ${computerOf(state, b)}`;
-  const hint = !now
+  const hint = WINDOWS ? runs : !now
     ? runs
     : where === "none"
       ? state.host === "mac"

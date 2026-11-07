@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
  * (Postgres) has no per-request sign-in yet, so anyone who reaches it could read or change who
  * counts as its user (and the Host header is theirs to set).
  */
-const HOSTED = "Adding an email only works in the app on your Mac for now.";
+const HOSTED = "Adding an email requires the Bops desktop app.";
 
 /**
  * The user's own addresses (lib/server/owner-email.ts): each with where it comes from, whether codes

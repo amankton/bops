@@ -334,7 +334,7 @@ export function replyCall(s: IssueSource, text: string, all = false): { action: 
  * and one reply at a time per issue. Then its history says "Replied: …" (`logged` false when memory didn't take it).
  */
 export async function replyToIssue(ws: string, issue: Issue, text: string, opts: { all?: boolean; nonce: string }): Promise<ReplyResult> {
-  if (onRunner()) return { ok: false, status: 409, error: "Reply from Bops on your Mac." };
+  if (onRunner()) return { ok: false, status: 409, error: "Reply from the Bops desktop app." };
   if (!/^[A-Za-z0-9_-]{8,80}$/.test(opts.nonce)) return { ok: false, status: 400, error: "Which click was that? Try again." };
   const words = text.trim();
   if (!words) return { ok: false, status: 400, error: "There's nothing to send." };

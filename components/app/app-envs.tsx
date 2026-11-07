@@ -1,5 +1,6 @@
 "use client";
 
+import { THIS_COMPUTER } from "@/lib/platform";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { allLocals, localWords, type AppDeploy, type AppEnv, type HostedApp, type HostedAppsAnswer, type HostedSite, type LocalAnswer, type LocalSite, type PreviewSite, type SiteDomain } from "@/lib/hosted-apps";
 import { readSettings, Variables } from "./app-settings";
@@ -346,7 +347,7 @@ export function AppEnvs({
     const r = await openPreview(ws, app.name, site, bot);
     setBusy(null);
     if (r.error) setError(undash(r.error));
-    else if (r.screen) setSaid(undash(r.said ?? "This Mac can't reach its computer, so it opens on its screen."));
+    else if (r.screen) setSaid(undash(r.said ?? `${THIS_COMPUTER} can't reach the bot's computer, so it opens on its screen.`));
   };
   /** Roll back: Prod's newest deploy that can be put back, asked once more first. */
   const rollbackAsk = async () => {
@@ -661,7 +662,7 @@ export function LocalSection({ ws, app, site, local, onLocal }: { ws: string; ap
   const start = async () => {
     const p = portShown.trim();
     if (p && (!/^\d{1,5}$/.test(p) || Number(p) < 1024 || Number(p) > 65535)) return setError({ words: "Use a port from 1024 to 65535.", field: "port" });
-    if (p === "3210") return setError({ words: "Bops uses 3210 on this Mac. Pick another.", field: "port" });
+    if (p === window.location.port) return setError({ words: `Bops uses port ${p} on this computer. Pick another.`, field: "port" });
     setBusy("start");
     setError(null);
     const r = await localAct(ws, app.name, {
@@ -686,7 +687,7 @@ export function LocalSection({ ws, app, site, local, onLocal }: { ws: string; ap
       const r = await openPreview(ws, app.name, site);
       setBusy(null);
       if (r.error) setError({ words: undash(r.error) });
-      else if (r.screen) setSaid(undash(r.said ?? "This Mac can't reach its computer, so it opens on its screen."));
+      else if (r.screen) setSaid(undash(r.said ?? `${THIS_COMPUTER} can't reach the bot's computer, so it opens on its screen.`));
       return;
     }
     const r = await localAct(ws, app.name, { action: "open", ...(site ? { site } : {}) });

@@ -133,7 +133,7 @@ export function OwnerEmail({ info, onInfo }: { info: OwnerEmailInfo; onInfo: (i:
     return (
       <div className="flex flex-col gap-1.5">
         <span className="text-[13px] font-medium leading-4">Your email</span>
-        <span className={note}>Adding an email only works in the app on your Mac for now.</span>
+        <span className={note}>Adding an email requires the Bops desktop app.</span>
       </div>
     );
 

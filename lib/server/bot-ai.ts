@@ -1,11 +1,12 @@
 import "server-only";
-import { AGENTS, agentOn, aiOf, cleanAi, hasProfile, isCli, MAX_AGENTS, modelOk, newAgentId, PAYS_SOON, paysOk, threadAgent } from "@/lib/agents";
+import { AGENTS, agentOn, aiOf, cleanAi, hasProfile, isCli, isDesktopAgent, MAX_AGENTS, modelOk, newAgentId, PAYS_SOON, paysOk, threadAgent } from "@/lib/agents";
 import { BRAINS_ON, workspaceOf, type AgentKind, type AgentPays, type Bot, type BotAi, type BotAgent } from "@/lib/types";
 import { addBrain, BrainError, ensureBrainTools } from "./brains";
 import { alsoSpec } from "./cli-agents";
 import { orgo } from "./orgo";
 import { workComputer } from "./screens";
 import { bot, getState, ownerName, session, update } from "./store";
+import { desktopAgentsAvailable, stopDesktopRun } from "./desktop-agents";
 
 /**
  * A bot's AI profile (Bot.ai, lib/agents.ts), changed by its owner from the bot's profile, AI (POST /api/bots/ai):
@@ -55,24 +56,34 @@ export function setBotAi(botId: string, o: AiOp, out: { added?: string } = {}): 
     if (!x) throw new BrainError(`${b.name} doesn't have that agent.`, 404);
     return x;
   };
-  const cliOk = (kind: AgentKind, pays?: AgentPays) => {
+  const cliOk = (kind: AgentKind, pays: AgentPays) => {
     if (kind === "bops") return;
+    if (isDesktopAgent({ kind, pays })) {
+      if (!desktopAgentsAvailable()) throw new BrainError("Add or select desktop agents in your own Bops desktop window.", 403);
+      return;
+    }
     if (!BRAINS_ON) throw new BrainError("This version of Bops runs Bops agent only.", 404);
     if (AGENTS[kind].soon || !agentOn(kind)) throw new BrainError(soonWords(kind), 400);
-    if (pays && !paysOk(kind, pays)) throw new BrainError(PAYS_SOON[kind]?.[pays] ? soonWords(kind, pays) : `${AGENTS[kind].name} doesn't run that way.`, 400);
+    if (!paysOk(kind, pays)) throw new BrainError(PAYS_SOON[kind]?.[pays] ? soonWords(kind, pays) : `${AGENTS[kind].name} doesn't run that way.`, 400);
   };
   const modelCheck = (kind: AgentKind, model: string | undefined | null) => {
     if (model && !(kind === "bops" && model === "auto") && !modelOk(kind, model)) throw new BrainError(`${AGENTS[kind].name} can't use that model.`, 400);
   };
   // The accounts the bot's other agents of a kind use: one account is one agent of the bot's.
   const takenBy = (kind: AgentKind, but?: BotAgent) => new Set(agents.filter((y) => y !== but && y.kind === kind).map((y) => y.account));
+  const target = o.op === "add" ? o : agents.find((x) => x.id === o.agentId);
+  const bopsDefault = o.op === "default" && o.agentId === "bops" && desktopAgentsAvailable();
+  const bopsModel = o.op === "update" && o.agentId === "bops" && o.pays === undefined && o.account === undefined;
+  if (!BRAINS_ON && !(target && isDesktopAgent(target)) && !bopsDefault && !bopsModel) {
+    throw new BrainError("Cloud agents are unavailable in this build.", 404);
+  }
   switch (o.op) {
     case "add": {
       if (o.kind === "bops") throw new BrainError("Bops agent is always there.", 400);
       cliOk(o.kind, o.pays);
       modelCheck(o.kind, o.model);
       if (agents.length >= MAX_AGENTS) throw new BrainError(`A bot runs at most ${MAX_AGENTS} agents.`, 400);
-      const account = o.kind === "claude" || o.kind === "codex" ? accountFor(o.kind, o.pays, wsId, !!o.newAccount, takenBy(o.kind), b.name) : undefined;
+      const account = (o.kind === "claude" || o.kind === "codex") && !isDesktopAgent(o) ? accountFor(o.kind, o.pays, wsId, !!o.newAccount, takenBy(o.kind), b.name) : undefined;
       if (o.kind !== "opencode" && agents.some((x) => x.kind === o.kind && x.pays === o.pays && x.account === account))
         throw new BrainError(`${b.name} has ${AGENTS[o.kind].name} on that account already.`, 400);
       out.added = newAgentId();
@@ -88,8 +99,9 @@ export function setBotAi(botId: string, o: AiOp, out: { added?: string } = {}): 
         x.pays = o.pays;
         delete x.model;
         delete x.account;
-        if (x.kind === "claude" || x.kind === "codex") x.account = accountFor(x.kind, o.pays, wsId, false, takenBy(x.kind, x), b.name);
+        if ((x.kind === "claude" || x.kind === "codex") && !isDesktopAgent(x)) x.account = accountFor(x.kind, o.pays, wsId, false, takenBy(x.kind, x), b.name);
       }
+      if (isDesktopAgent(x) && (o.newAccount || o.account !== undefined)) throw new BrainError("This agent uses the login from its desktop CLI.", 400);
       // Move to another account: a new one of its kind (a second Claude plan signs in on its own).
       if (o.newAccount && (x.kind === "claude" || x.kind === "codex")) {
         const fresh = accountFor(x.kind, x.pays, wsId, true, takenBy(x.kind, x), b.name);
@@ -118,7 +130,7 @@ export function setBotAi(botId: string, o: AiOp, out: { added?: string } = {}): 
     }
     case "default": {
       const x = find(o.agentId);
-      cliOk(x.kind);
+      cliOk(x.kind, x.pays);
       def = x.id;
       break;
     }
@@ -150,11 +162,12 @@ export function setBotAi(botId: string, o: AiOp, out: { added?: string } = {}): 
  * folders on its computer follow it (letGo). `after` undefined: back to no profile, today's Bops agent.
  */
 export function aiChanged(botId: string, before: BotAi, after: BotAi | undefined, stop = true) {
+  if (before.agents.some(isDesktopAgent)) stopDesktopRun(botId);
   const changed = before.agents.filter((x) => {
     const y = after?.agents.find((z) => z.id === x.id);
-    return isCli(x.kind) && (!y || y.account !== x.account || y.pays !== x.pays);
+    return isCli(x.kind) && !isDesktopAgent(x) && (!y || y.account !== x.account || y.pays !== x.pays);
   });
-  if (changed.length || (!after && before.agents.some((x) => isCli(x.kind)))) void letGo(botId, changed.map((x) => x.id), !after, stop);
+  if (changed.length) void letGo(botId, changed.map((x) => x.id), !after, stop);
 }
 
 /**
@@ -201,7 +214,7 @@ export async function clearOnComputer(computerId: string, botId: string, agentId
  * that never ran a CLI agent: nothing of it is there.
  */
 export function leaveComputer(b: Bot, computerId: string | undefined) {
-  if (!BRAINS_ON || !computerId || !(hasProfile(b, getState()) && aiOf(b, getState()).agents.some((x) => isCli(x.kind)))) return;
+  if (!BRAINS_ON || !computerId || !(hasProfile(b, getState()) && aiOf(b, getState()).agents.some((x) => isCli(x.kind) && !isDesktopAgent(x)))) return;
   void clearOnComputer(computerId, b.id, []).catch((e: Error) => console.warn(`[bot-ai] ${b.name} leaving its computer: ${e.message}`));
 }
 

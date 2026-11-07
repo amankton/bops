@@ -1,5 +1,7 @@
 "use client";
 
+import { YOUR_COMPUTER } from "@/lib/platform";
+
 import { useEffect, useRef, useState } from "react";
 import { live, type AppState, type Bot, type Session, type Watch } from "@/lib/types";
 import { MacIcon, MacSettings } from "./mac-tab";
@@ -253,7 +255,7 @@ function MacComputerView({ state, mode, onFocus, onBack, onOpenThread, showThrea
           </svg>
           <span className="text-[13px] font-medium leading-4">Back</span>
         </button>
-        <span className="text-[15px] font-semibold leading-5">Your Mac</span>
+        <span className="text-[15px] font-semibold leading-5">{YOUR_COMPUTER}</span>
         <span className="flex-1" />
         <div className="flex gap-1">
           {items.map((i) => {

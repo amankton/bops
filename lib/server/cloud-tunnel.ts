@@ -121,7 +121,7 @@ async function replay(req: Req): Promise<MacToCloud> {
     });
     return { t: "res", id: req.id, status: res.status, headers: answer, body };
   } catch (e) {
-    return refuse(502, `this Mac's server didn't answer: ${(e as Error).message}`);
+    return refuse(502, `the desktop server didn't answer: ${(e as Error).message}`);
   }
 }
 

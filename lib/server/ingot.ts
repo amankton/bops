@@ -65,7 +65,7 @@ export const NO_TOKEN_HERE =
 /** The workspace's agent token on this computer, as the owner's Bops wrote it there (tokenScript), or null: a runner's own sign in to Ingot. */
 function runnerToken(workspace: string): string | null {
   try {
-    const t = readFileSync(join(runnerTokens(), workspace), "utf8").trim();
+    const t = readFileSync(/*turbopackIgnore: true*/ join(/*turbopackIgnore: true*/ runnerTokens(), workspace), "utf8").trim();
     return /^ingot_[A-Za-z0-9]{16,128}$/.test(t) ? t : null;
   } catch {
     return null;

@@ -59,7 +59,7 @@ async function fetchFile(botId: string, href: string): Promise<Buffer> {
     const path = posix.normalize(href);
     if (!path.startsWith("/workspace/")) throw new Error("That isn't a file in the bot's workspace.");
     const computerId = getState().host === "mac" ? null : workComputer(b).computerId;
-    if (!computerId) throw new Error("That file was in a task's scratch folder on your Mac, which is gone now.");
+    if (!computerId) throw new Error("That file was in a task's scratch folder on your computer, which is gone now.");
     const q = `'${path.replace(/'/g, `'\\''`)}'`;
     const r = await orgo.bash(computerId, `test -f ${q} || { echo missing; exit 3; }; s=$(stat -c %s ${q}); [ "$s" -le ${MAX_BYTES} ] || { echo big; exit 4; }; base64 -w0 ${q}`, 60);
     if (r.exit_code === 3) throw new Error(`${basename(path)} isn't on ${b.name}'s computer anymore.`);
@@ -81,7 +81,7 @@ async function fetchFile(botId: string, href: string): Promise<Buffer> {
     .map(realOrNull)
     .filter((r): r is string => !!r);
   if (!roots.some((r) => real.startsWith(`${r}/`)))
-    throw new Error(full ? "Bops only opens files in your home folder." : "Bops opens files on your Mac only from the bot's own task folder, unless Full access is on.");
+    throw new Error(full ? "Bops only opens files in your home folder." : "Bops opens local files only from the bot's own task folder, unless Full access is on.");
   if (statSync(/*turbopackIgnore: true*/ real).size > MAX_BYTES) throw new Error(`${basename(real)} is too big to open here (25 MB at most).`);
   return readFileSync(/*turbopackIgnore: true*/ real);
 }

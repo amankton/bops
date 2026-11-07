@@ -1,5 +1,6 @@
 "use client";
 
+import { THIS_COMPUTER, WINDOWS } from "@/lib/platform";
 import { useEffect, useRef, useState } from "react";
 import { PRIVACY, TERMS } from "@/lib/links";
 import { Mascot, Spinner } from "./mascot";
@@ -301,7 +302,7 @@ function Welcome({ starting, onStart }: { starting: Way | null; onStart: (way: W
 const PROBLEMS: Record<Problem, { title: string; line: string; action: string }> = {
   offline: { title: "Couldn't connect", line: "Check your internet connection, then try again.", action: "Try again" },
   orgo: { title: "Something went wrong", line: "Signing in isn't working right now. Try again in a moment.", action: "Try again" },
-  keychain: { title: "Couldn't save your sign-in", line: "Your Mac didn't let Bops keep it in the keychain. Unlock your Mac, then try again.", action: "Try again" },
+  keychain: { title: "Couldn't save your sign-in", line: WINDOWS ? "Bops couldn't save your sign-in to Windows encrypted storage. Try again from your Windows account." : "Your Mac didn't let Bops keep it in the keychain. Unlock your Mac, then try again.", action: "Try again" },
   cloud: { title: "Couldn't load your Bops", line: "Couldn't load your Bops from Bops Cloud. Try again.", action: "Try again" },
 };
 
@@ -321,7 +322,7 @@ function Retry({
     step.kind === "expired"
       ? { title: "That code expired", line: "Codes last a few minutes. Get a new one and finish in your browser.", action: "Get a new code" }
       : step.kind === "denied"
-        ? { title: "Sign-in was declined", line: "This Mac wasn't approved. If that was a mistake, start again.", action: "Try again" }
+        ? { title: "Sign-in was declined", line: `${THIS_COMPUTER} wasn't approved. If that was a mistake, start again.`, action: "Try again" }
         : PROBLEMS[step.problem];
   return (
     <>

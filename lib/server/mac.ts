@@ -43,7 +43,7 @@ export async function checkMac() {
   let next: MacState["next"];
   if (!onTheMac()) {
     next = "elsewhere";
-    reason = "Bots work on your Mac in the Bops app on your Mac.";
+    reason = process.platform === "win32" ? "For local computer tasks, select This PC and connect Codex or Claude Code in the bot's AI settings." : "Bots work on your Mac in the Bops app on your Mac.";
   } else if (!findCodex()) {
     if (!installStatus()) installCodex(() => void checkMac().catch(() => {}));
     const failed = installStatus()?.state === "failed" ? installStatus()?.error : undefined;

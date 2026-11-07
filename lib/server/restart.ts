@@ -1,4 +1,5 @@
 import "server-only";
+import { setTimeout as delay } from "node:timers/promises";
 import { stopCloud } from "./cloud-tunnel";
 import { forgetPlan } from "./plan";
 import { flushState, stateInCloud } from "./store";
@@ -23,8 +24,15 @@ const SAVE_MS = 10_000;
  * time; the rest is let go all the same, as a restart is what fixes a stuck server.
  */
 export async function prepareRestart() {
-  const saved = await flushState(SAVE_MS).catch(() => false);
+  const [saved] = await Promise.all([
+    flushState(SAVE_MS).catch(() => false),
+    // The Windows app stops the server's process tree after this request.
+    process.platform === "win32" && Promise.race([
+      import("./local-vm").then(({ stopLocalVms }) => stopLocalVms()),
+      delay(5000, undefined, { ref: false }),
+    ]),
+  ]);
   await stopCloud();
   forgetPlan();
-  if (!saved) throw new Error(stateInCloud() ? "Some changes hadn't reached Bops Cloud yet; they're sent once more on the way out, and kept on this Mac until they're up." : "The last save didn't finish; it's tried once more on the way out.");
+  if (!saved) throw new Error(stateInCloud() ? "Some changes hadn't reached Bops Cloud yet; they're sent once more on the way out, and kept on this computer until they're up." : "The last save didn't finish; it's tried once more on the way out.");
 }

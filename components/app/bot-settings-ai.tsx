@@ -1,6 +1,7 @@
 "use client";
 
 import { botChatId, type AppState, type Bot, type Session } from "@/lib/types";
+import { WINDOWS } from "@/lib/platform";
 import { Your, yourMac } from "@/lib/shared";
 import { BotAiSection } from "./bot-ai";
 import { Segmented } from "./segmented";
@@ -39,18 +40,18 @@ export function AiSlot({
         onOpenChat={onOpenChat ? () => onOpenChat(botChatId(b.id)) : undefined}
         onAddKey={onAddKey ? () => onAddKey(b.id) : undefined}
       />
-      <Segmented
+      {(!WINDOWS || state.shared) && <Segmented
         title="Works on"
-        hint={runsOn === "auto" ? `Its cloud computer, or ${yourMac(state)} when a task needs it` : runsOn === "mac" ? `${Your(state)} Mac, always` : "Its cloud computer, always"}
+        hint={runsOn === "auto" ? `Its cloud computer, or ${yourMac(state)} when a task needs it` : runsOn === "mac" ? `${yourMac(state)}, always` : "Its cloud computer, always"}
         value={runsOn}
         options={[
           ["auto", "Auto"],
           ["cloud", "Cloud"],
-          ["mac", `${Your(state)} Mac`],
+          ["mac", WINDOWS ? "Owner's computer" : `${Your(state)} Mac`],
         ]}
         disabled={busy || !!state.shared}
         onPick={(v) => void send({ runsOn: v })}
-      />
+      />}
       {error && (
         <span role="alert" className="text-[12px] leading-4 text-[#B42318]">
           {error}

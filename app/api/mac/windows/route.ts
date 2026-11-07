@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
  * the windows bots use. Its window id is the one macOS (and Electron's screen capture) knows.
  */
 export async function GET(request: Request) {
+  if (process.platform === "win32") return Response.json({ windows: [] });
   const url = new URL(request.url);
   if (!["localhost", "127.0.0.1", "::1"].includes(url.hostname)) return Response.json({ error: "local only" }, { status: 403 });
   // Every window worth watching (?all=1), for the Watch picker.

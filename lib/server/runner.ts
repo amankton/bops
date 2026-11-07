@@ -415,6 +415,7 @@ function handedOver(r: Routine, now: number): boolean {
  */
 export function runnerRuns(r: Routine): boolean {
   const s = getState();
+  if (s.desktopRoutineDevice) return false;
   const computer = computerOf(r);
   return !!computer && s.runners?.[computer]?.status === "running" && !pinnedToMac(r, s.bots.find((x) => x.id === r.botId));
 }
@@ -514,7 +515,8 @@ export function onRunnerComputer(r: Pick<Routine, "botId">): boolean {
 
 /** On a runner: the routine is this one's, its bot working on this computer and the Mac not needed (never a reminder or a chat run), whether or not it may run it right now. */
 export function runnerRoutine(r: Routine): boolean {
-  return onRunnerComputer(r) && !pinnedToMac(r, getState().bots.find((x) => x.id === r.botId));
+  const s = getState();
+  return !s.desktopRoutineDevice && onRunnerComputer(r) && !pinnedToMac(r, s.bots.find((x) => x.id === r.botId));
 }
 
 /**

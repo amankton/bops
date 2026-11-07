@@ -29,6 +29,7 @@ import { CloseButton, currentWorkspace, needsYou, post, ReadOnlyLine, teamOf } f
 import { FooterButton } from "./sidebar-footer";
 import { deleteQuestion, RoutineWeek, useClock, weekPlan, WeekLegend, WeekLetters } from "./routine-week";
 import { ReportsSheet } from "./routine-reports";
+import { WINDOWS } from "@/lib/platform";
 
 /*
  * Routines: what the workspace's bots do on their own, and how. Schedules (routines: a reminder, a turn
@@ -87,7 +88,7 @@ const matchMonitor = (w: Watch, q: string) => has(q, watchName(w), w.site, w.loo
  * or, while its bot's computer is down or asleep with it overdue, that it waits and why ("Waiting: Max's
  * computer is stopped", computerWait): it runs there once the computer is up.
  */
-export function nextWords(r: Routine, state: Pick<AppState, "sessions" | "bots" | "runners" | "workspaces">, tz?: string) {
+export function nextWords(r: Routine, state: Pick<AppState, "sessions" | "bots" | "runners" | "workspaces" | "desktopRoutineDevice">, tz?: string) {
   if (runningNow(r, state.sessions)) return "Running now";
   if (done(r)) return "Done";
   if (!r.enabled) return "Paused";
@@ -672,6 +673,7 @@ export function AutopilotPage({
   const now = useClock(30_000);
   const all = autopilotOf(state);
   const team = teamOf(state);
+  const [addingLocal, setAddingLocal] = useState(false);
   // The filter asked for (the bot's, or the one there was), unless it hides the row asked for: then none, so that row shows.
   const fit = (f: RoutineFilter): RoutineFilter => {
     if (!focus) return f;
@@ -762,6 +764,12 @@ export function AutopilotPage({
             </div>
             <CloseButton onClick={onClose} className="mt-1.5" />
           </div>
+
+          {WINDOWS && state.desktopRoutinesHere && team.length > 0 && (
+            addingLocal
+              ? <LocalRoutineForm bots={team} botId={bot} tz={state.owner?.timeZone} onClose={() => setAddingLocal(false)} />
+              : <button className="self-start rounded-xl bg-ink px-3 py-2 text-[13px] font-medium text-white" onClick={() => setAddingLocal(true)}>New local routine</button>
+          )}
 
           {(team.length > 1 || appFilters) && (
             <div className="flex flex-col gap-2">
@@ -1004,6 +1012,41 @@ function whenContext(r: Routine, state: AppState) {
     presets: r.source?.template ? suggestedOf(r.source.template === CHECK_TEMPLATE ? { suggested: CHECK_TIMES } : templateById(r.source.template)) : undefined,
     calendar: !!bot && botApps(state, bot).some((x) => sameApp(x.app, "googlecalendar")),
   };
+}
+
+function LocalRoutineForm({ bots, botId, tz, onClose }: { bots: Bot[]; botId?: string; tz?: string; onClose: () => void }) {
+  const [selected, setSelected] = useState(botId ?? bots[0].id);
+  const [title, setTitle] = useState("");
+  const [goal, setGoal] = useState("");
+  const [schedule, setSchedule] = useState<Cadence>({ kind: "daily", time: "09:00" });
+  const [zone, setZone] = useState(tz);
+  const [run, setRun] = useState<"task" | "chat">("task");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const field = "rounded-xl bg-[#F7F7F6] px-3 py-2 text-[13px]";
+  const save = async () => {
+    setBusy(true);
+    const result = await send("/api/routines", { botId: selected, title: title.trim(), goal: goal.trim(), schedule: asSchedule(tidy(schedule)), run, timeZone: zone !== tz ? zone : undefined }, "POST");
+    if (result) {
+      setError(result);
+      setBusy(false);
+    } else onClose();
+  };
+  return (
+    <form className="flex flex-col gap-2.5 rounded-2xl border border-[#E6E6E3] p-4" onSubmit={(e) => { e.preventDefault(); if (!busy && goal.trim()) void save(); }}>
+      <h2 className="text-[14px] font-semibold">New local routine</h2>
+      <label className="flex flex-col gap-1 text-[12px]">Bot<select className={field} value={selected} onChange={(e) => setSelected(e.target.value)}>{bots.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
+      <label className="flex flex-col gap-1 text-[12px]">Name<input className={field} value={title} onChange={(e) => setTitle(e.target.value)} autoFocus /></label>
+      <label className="flex flex-col gap-1 text-[12px]">What it does<textarea className={field} rows={3} value={goal} onChange={(e) => setGoal(e.target.value)} required /></label>
+      <label className="flex flex-col gap-1 text-[12px]">Run with<select className={field} value={run} onChange={(e) => setRun(e.target.value === "chat" ? "chat" : "task")}><option value="task">Podman Local VM</option><option value="chat">Text reply</option></select></label>
+      <CadencePicker value={schedule} onChange={setSchedule} zone={zone} ownerZone={tz} onZone={setZone} disabled={busy} />
+      {error && <p role="alert" className="text-[12px] text-[#AE3428]">{error}</p>}
+      <div className="flex gap-3">
+        <button type="submit" disabled={busy || !goal.trim()} className="rounded-xl bg-ink px-3 py-2 text-[13px] text-white disabled:opacity-40">Save routine</button>
+        <button type="button" disabled={busy} className="px-2 text-[13px]" onClick={onClose}>Cancel</button>
+      </div>
+    </form>
+  );
 }
 
 /** `timeZone` null: back on the owner's zone (the routine stops having its own). */
@@ -1414,7 +1457,7 @@ export function ScheduleRow({
               </span>
             ),
           ],
-          ["Runs", howWords(r)],
+          ["Runs", state.desktopRoutineDevice && !r.reminder ? (r.run === "chat" ? "Text reply on this PC" : "Podman Local VM") : howWords(r)],
           ["Quiet", r.quiet ? `Yes: it posts only when there's something for ${you(state)}` : ""],
           ["Results go to", destinations(r, state)],
           // Set up on someone else's say (an email or a text from outside): who, so the user can tell.

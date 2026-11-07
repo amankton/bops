@@ -475,9 +475,9 @@ function typing(l: ChannelLink, chat: string) {
 
 async function tokenOf(l: ChannelLink) {
   // Its token is in the Mac's Keychain, which a computer's runner hasn't.
-  if (onRunner()) throw new Error(`${KIND_NAME[l.kind]} works from the Bops app on your Mac, not from a bot's computer`);
+  if (onRunner()) throw new Error(`${KIND_NAME[l.kind]} requires the Bops desktop app`);
   const t = await getUserSecret(secretOf(l.id));
-  if (!t) throw new Error(`${KIND_NAME[l.kind]} token is missing from the Keychain`);
+  if (!t) throw new Error(`${KIND_NAME[l.kind]} token is missing from secure storage`);
   return t;
 }
 

@@ -88,7 +88,7 @@ export function crmOff(): Response | null {
   if (crmOn()) return null;
   // Signed in, but the CRM isn't open to this account yet (lib/crm-access.ts): there's no CRM to speak of.
   if (crmHere()) return Response.json({ error: "Not found." }, { status: 404 });
-  return Response.json({ error: onPostgres() ? "The CRM is only in the Mac app." : CRM_SAY.signIn }, { status: 400 });
+  return Response.json({ error: onPostgres() ? "The CRM requires the Bops desktop app." : CRM_SAY.signIn }, { status: 400 });
 }
 
 /* ---------------- Folders and names ---------------- */

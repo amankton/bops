@@ -220,7 +220,7 @@ export const browserMcp = (port: number, dir: string) => {
  * call to its daemon. mac-windows.ts uses it for the window previews too.
  */
 export const CUA_DRIVER = process.env.CUA_DRIVER_PATH ?? join(homedir(), ".local/bin/cua-driver");
-export const cuaDriverHere = () => existsSync(CUA_DRIVER);
+export const cuaDriverHere = () => existsSync(/*turbopackIgnore: true*/ CUA_DRIVER);
 /**
  * Seeing and using windows (a browser's too: its pages are in the accessibility tree), and `page` to read a
  * tab's text. Not what moves the user's pointer, fronts or quits apps, touches the clipboard or changes
@@ -327,6 +327,7 @@ export function prepareTaskDir(sessionId: string, dir = taskDir(sessionId), keep
  * writeSkillFiles), fresh each run, so Codex finds them as skills. A folder it can't write costs the task nothing.
  */
 export async function startExecutor(sessionId: string, envId: string, remoteUrl: string, port: number, dir = taskDir(sessionId), fullAccess = false, botId?: string, keep = false): Promise<ChildProcess> {
+  if (process.platform === "win32") throw new Error("Start a new PC thread with Codex or Claude Code to use the Podman desktop.");
   if (!fullAccess && !existsSync(SANDBOX_EXEC)) throw new Error("this Mac has no sandbox for bots (/usr/bin/sandbox-exec)");
   const codex = findCodex();
   if (!codex) throw new Error("the Codex CLI isn't on this Mac yet");

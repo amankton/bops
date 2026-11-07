@@ -350,7 +350,7 @@ const tidy = (e: unknown) => (String((e as Error)?.message ?? e) || "it didn't g
  * is still connected and signed in; on a failure the draft stays unsent, with why, to send again.
  */
 export async function sendDraft(messageId: string, draftId: string, text: string): Promise<SendResult> {
-  if (onRunner()) return { ok: false, status: 409, error: "Send it from Bops on your Mac." };
+  if (onRunner()) return { ok: false, status: 409, error: "Send it from the Bops desktop app." };
   const f = find(messageId, draftId);
   if (!f) return { ok: false, status: 404, error: "That reply isn't here anymore." };
   const { m, d } = f;

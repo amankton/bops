@@ -2,12 +2,12 @@ import { setBotAi, type AiOp } from "@/lib/server/bot-ai";
 import { BrainError } from "@/lib/server/brains";
 import { notReady } from "@/lib/server/ready";
 import { fromBopsWindow } from "@/lib/server/ui-token";
-import { BRAINS_ON, type AgentKind, type AgentPays } from "@/lib/types";
+import type { AgentKind, AgentPays } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-const KINDS: AgentKind[] = ["bops", "claude", "codex", "opencode", "agy"];
-const PAYS: AgentPays[] = ["credit", "plan", "key"];
+const KINDS: AgentKind[] = ["bops", "claude", "codex", "opencode", "agy", "hermes"];
+const PAYS: AgentPays[] = ["credit", "plan", "key", "local"];
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
 /**
@@ -42,8 +42,6 @@ export async function POST(request: Request) {
     default:
       return Response.json({ error: "op: add, update, remove or default" }, { status: 400 });
   }
-  // Without brains (a release build), only Bops agent's model: nothing else is there to change.
-  if (!BRAINS_ON && !(op.op === "update" && op.agentId === "bops" && op.pays === undefined && op.account === undefined)) return Response.json({ error: "This version of Bops runs Bops agent only." }, { status: 404 });
   try {
     const out: { added?: string } = {};
     const ai = setBotAi(botId, op, out);

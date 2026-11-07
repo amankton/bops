@@ -18,7 +18,7 @@ import { registerHooks } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 
-const root = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+const root = fileURLToPath(new URL("..", import.meta.url));
 
 registerHooks({
   resolve(specifier, context, next) {

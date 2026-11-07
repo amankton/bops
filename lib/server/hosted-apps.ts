@@ -4333,7 +4333,9 @@ function devPortOf(v: unknown): number | "auto" | undefined {
   if (v === undefined || v === null || v === "") return undefined;
   const n = typeof v === "number" ? v : typeof v === "string" && /^\s*\d{1,5}\s*$/.test(v) ? Number(v) : NaN;
   if (!Number.isInteger(n) || n < 1024 || n > 65535) throw new HostedAppError("Use a port from 1024 to 65535.", 400, { field: "port" });
-  if (n === 3210) throw new HostedAppError("Bops uses 3210 on this Mac. Pick another.", 400, { field: "port" });
+  if (n === Number(process.env.PORT || (process.platform === "win32" ? 3211 : 3210))) {
+    throw new HostedAppError(`Bops uses port ${n} on this computer. Pick another.`, 400, { field: "port" });
+  }
   return n;
 }
 
@@ -4433,7 +4435,7 @@ export async function localAct(wsId: string, name: string, ask: { action?: unkno
 
 /** Why a preview on this Mac can't open, so it opens on the computer's screen instead (the window does that). */
 const ON_SCREEN = {
-  tailnet: "This Mac can't reach its computer, so it opens on its screen.",
+  tailnet: "This computer can't reach the bot's computer, so it opens on its screen.",
   refused: "Orgo didn't turn on SSH for its computer, so it opens on its screen.",
   noAddress: "Its computer has no SSH address yet, so it opens on its screen.",
   noAnswer: "Its computer's SSH didn't answer, so it opens on its screen.",

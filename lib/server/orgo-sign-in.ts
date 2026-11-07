@@ -75,7 +75,7 @@ async function orgoPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 /** This Mac's name as the user knows it ("Ana's MacBook Air"), shown on Orgo's approve page. */
-const macName = () =>
+const macName = () => process.platform === "win32" ? Promise.resolve(hostname()) :
   new Promise<string>((resolve) =>
     execFile("scutil", ["--get", "ComputerName"], { timeout: 2000 }, (e, out) => resolve((!e && out.trim()) || hostname().replace(/\.local$/, ""))),
   );

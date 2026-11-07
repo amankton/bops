@@ -13,7 +13,7 @@ import { userBopsHome } from "./user-paths";
  */
 const file = () => join(/*turbopackIgnore: true*/ userBopsHome(signedInUser()?.id ?? null), "full-access");
 
-export const fullAccessOn = () => existsSync(/*turbopackIgnore: true*/ file());
+export const fullAccessOn = () => process.platform !== "win32" && existsSync(/*turbopackIgnore: true*/ file());
 
 export function setFullAccess(on: boolean) {
   const f = file();

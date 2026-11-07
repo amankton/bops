@@ -2,6 +2,7 @@ import "server-only";
 import { execFile, spawn } from "node:child_process";
 import { onRunner } from "./persist";
 import { stateUser } from "./store";
+import { windowsVault } from "./windows-vault";
 
 /**
  * Secrets in the Mac's Keychain, under "Bops Vault". Values go to `security` on stdin, hex-encoded,
@@ -10,12 +11,16 @@ import { stateUser } from "./store";
  */
 const SERVICE = "Bops Vault";
 const q = (s: string) => `"${s.replace(/["\\]/g, "")}"`;
-const NOT_HERE = "This is kept only in the Bops app on your Mac.";
+const NOT_HERE = "This is kept in the Bops desktop app.";
+const vault = windowsVault();
 
 export function setSecret(account: string, value: string) {
   if (onRunner()) return Promise.reject(new Error(NOT_HERE));
+  if (process.platform === "win32") return vault.set(account, value);
   return new Promise<void>((resolve, reject) => {
     const p = spawn("security", ["-i"], { stdio: ["pipe", "ignore", "pipe"] });
+    p.on("error", () => reject(new Error("Secure storage is unavailable on this computer.")));
+    p.stdin.on("error", () => {});
     let err = "";
     p.stderr.on("data", (d) => (err += d));
     p.on("close", (code) => (code === 0 && !err.trim() ? resolve() : reject(new Error(`Keychain refused it: ${err.trim() || code}`))));
@@ -25,6 +30,7 @@ export function setSecret(account: string, value: string) {
 
 export function getSecret(account: string) {
   if (onRunner()) return Promise.resolve(null);
+  if (process.platform === "win32") return vault.get(account);
   return new Promise<string | null>((resolve) =>
     execFile("security", ["find-generic-password", "-s", SERVICE, "-a", account, "-w"], (e, out) => resolve(e ? null : out.replace(/\n$/, ""))),
   );
@@ -32,6 +38,7 @@ export function getSecret(account: string) {
 
 export function deleteSecret(account: string) {
   if (onRunner()) return Promise.resolve();
+  if (process.platform === "win32") return vault.delete(account);
   return new Promise<void>((resolve) => execFile("security", ["delete-generic-password", "-s", SERVICE, "-a", account], () => resolve()));
 }
 

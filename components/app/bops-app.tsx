@@ -1,6 +1,7 @@
 "use client";
 
 import { APPS_NAME, appsOwnShown, appsShown } from "@/lib/apps-access";
+import { THIS_COMPUTER, WINDOWS } from "@/lib/platform";
 import { screenMap } from "@/lib/screens";
 import { chatAsks } from "@/lib/asks";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -12,6 +13,7 @@ import { Members } from "./members";
 import { TeamChart } from "./team-chart";
 import { BotPanel, type Section } from "./bot-panel";
 import { BotBrowser, WatchChip } from "./bot-browser";
+import { LocalBrowser } from "./local-browser";
 import { ChatEdge, gridColumns, storedChatWidth } from "./chat-edge";
 import { BotComputers } from "./bot-computers";
 import { BrainSettings } from "./brains";
@@ -24,7 +26,7 @@ import { tagsOf } from "@/lib/routine-catalog";
 import { CrmView, OpenCrm } from "./crm";
 import { BoppyLoading, BotMoodsFrom, CallTalking, Mascot, talkingStore } from "./mascot";
 import { MemoryView, type MemoryOpen } from "./memory-categories";
-import { BROWSER_TAB, BrowserGoTo, browserTabOf, browsesHere, CHAT_TAB, electron, forgetTab, hostOf, isReading, LocalOnly, memoryAgain, NewTab, OpenBotLocal, OpenInBrowser, OpenLink, OpenPreview, TabBar, WebTab, type BrowserGo, type PanelTab, type PreviewOpened } from "./panel-tabs";
+import { BROWSER_TAB, BrowserGoTo, browserTabOf, browsesHere, CHAT_TAB, electron, forgetTab, hostOf, isReading, localBrowserHere, LocalOnly, memoryAgain, NewTab, OpenBotLocal, OpenInBrowser, OpenLink, OpenPreview, TabBar, WebTab, type BrowserGo, type PanelTab, type PreviewOpened } from "./panel-tabs";
 import { PreviewTab } from "./preview-tab";
 import { MadeAppsHome, MadeAppTab, OpenMadeApp } from "./made-apps";
 import { appsStamp, HostedAppTab, OpenAppTask, OpenHostedApp, OpenSettings } from "./hosted-apps";
@@ -43,6 +45,7 @@ import { SidebarRail } from "./sidebar-rail";
 import type { BotMenuActions } from "./bot-menu";
 import { NewThread } from "./new-thread";
 import { readyAgents } from "@/lib/agents";
+import { DesktopRoster } from "./bot-ai";
 import { isLocalLink } from "@/lib/plain-words";
 import { footerPageOf, openFooterPage } from "./sidebar-footer";
 import { CloudUnreachable, SignIn, useAuthStatus } from "./sign-in";
@@ -53,6 +56,7 @@ import { LoginsPage } from "./logins";
 import { MacPreviews } from "./mac-tab";
 import { OPEN_MAC_KEY } from "./mac-pip";
 import { MacComputer } from "./mac-computer";
+import { PcBotComputer, PcComputer } from "./pc-computer";
 import { RestartButton, RestartIcon, useCanRestart } from "./restart";
 import { RunsOnSettings } from "./runs-on";
 import { chatInWorkspace, currentWorkspace, option, post, radio, SideToggleIcon, teamOf, useAppState, useSelfHosted } from "./ui";
@@ -820,7 +824,7 @@ function Bops({ state }: { state: AppState | null }) {
   const chatBot = state.bots.find((b) => b.id === chatBotId);
   const browserBot = browsesHere(state, chatBot) ? chatBot : undefined;
   const browserInSight = panelOpen && !focus && (chatBot && seesBrowser(state, chatBot) ? showingComputer && bot.id === chatBotId : tab?.kind === "browser" && tab.botId === chatBotId);
-  const watchChip = browserBot && !browserInSight && <WatchChip key={`${browserBot.id}:${state.shared?.projectId ?? ""}`} bot={browserBot} project={state.shared?.projectId ?? ""} onWatch={() => showBrowser(browserBot.id)} />;
+  const watchChip = browserBot && !browserInSight && !localBrowserHere(state) && <WatchChip key={`${browserBot.id}:${state.shared?.projectId ?? ""}`} bot={browserBot} project={state.shared?.projectId ?? ""} onWatch={() => showBrowser(browserBot.id)} />;
 
   /**
    * Show a watched thing: its Mac window in Your Mac, the bot's screen it's on, or (a web page, which has
@@ -895,7 +899,8 @@ function Bops({ state }: { state: AppState | null }) {
     setThreadId(s.id);
     // A thread on your Mac shows your Mac; one in the cloud, the bot's computer, on its screen. The owner's
     // thread on their Mac, in a workspace shared with the user, is never shown as the viewer's own Mac (opensMacTab).
-    if (opensMacTab(state, s)) {
+    if (s.pcTask && localBrowserHere(state)) showBrowser(s.botId);
+    else if (!WINDOWS && opensMacTab(state, s)) {
       const mac = openTabs.find((t) => t.kind === "mac");
       if (!mac) setTabs([...openTabs, { id: MAC_TAB, kind: "mac" }]);
       setActive(mac?.id ?? MAC_TAB);
@@ -959,7 +964,8 @@ function Bops({ state }: { state: AppState | null }) {
           onClose={() => setThreadId(null)}
           onShowComputer={() => {
             setPanelOpen(true);
-            setActive(CHAT_TAB);
+            if (thread.pcTask && localBrowserHere(state)) showBrowser(thread.botId);
+            else setActive(CHAT_TAB);
           }}
           onShowScreen={showScreen}
         />
@@ -992,7 +998,7 @@ function Bops({ state }: { state: AppState | null }) {
     // focused for the task (once the chat is on screen).
     onNewTask: (id) => {
       const nb = state.bots.find((x) => x.id === id);
-      if (nb && !state.shared && readyAgents(nb, state).length > 1) {
+      if (nb && !state.shared && ((WINDOWS && state.host === "mac") || readyAgents(nb, state).length > 1)) {
         setComposing(false);
         openChat(botChatId(id));
         return setNewThreadFor(id);
@@ -1134,11 +1140,15 @@ function Bops({ state }: { state: AppState | null }) {
             </div>
           ) : focus && macFocus && !state.shared ? (
             <div className="flex min-h-0 min-w-0 flex-col bg-white">
-              <MacComputer state={state} mode="focus" showThread={thread?.runsOn === "mac" ? thread.id : undefined} onBack={() => setFocus(false)} onOpenThread={openThread} />
+              {WINDOWS ? <div className="flex min-h-0 flex-1 p-4"><PcComputer onBack={() => setFocus(false)} /></div> :
+                <MacComputer state={state} mode="focus" showThread={thread?.runsOn === "mac" ? thread.id : undefined} onBack={() => setFocus(false)} onOpenThread={openThread} />}
             </div>
           ) : focus ? (
             <div className="flex min-h-0 min-w-0 flex-col bg-white">
-              <ComputerView
+              {WINDOWS && !state.shared && state.host === "mac" ? <div className="space-y-3 p-4">
+                <button onClick={() => setFocus(false)} className="text-[13px]">Back</button>
+                <PcBotComputer name={bot.name} local={!!state.desktopRoutinesHere} onBrowser={() => { setFocus(false); showBrowser(bot.id); }} onSettings={() => openSettings("mac")} />
+              </div> : <ComputerView
                 state={state}
                 bot={bot}
                 display={display}
@@ -1148,7 +1158,7 @@ function Bops({ state }: { state: AppState | null }) {
                 onShowScreen={showScreen}
                 mode="focus"
                 onBack={() => setFocus(false)}
-              />
+              />}
             </div>
           ) : (
             <>
@@ -1285,6 +1295,7 @@ function Bops({ state }: { state: AppState | null }) {
                       onMac={() => setTabs(tabs.map((t) => (t.id === tab.id ? { id: t.id, kind: "mac" } : t)))}
                     />
                   ) : tab?.kind === "browser" && state.bots.some((b) => b.id === tab.botId) ? (
+                    localBrowserHere(state) ? <LocalBrowser key={tab.botId} bot={state.bots.find((b) => b.id === tab.botId)!} /> :
                     // Of the workspace open now: a switch to another with a bot of the same id starts it afresh (bot-browser.tsx `project`).
                     <BotBrowser key={`${tab.id}:${state.shared?.projectId ?? ""}`} bot={state.bots.find((b) => b.id === tab.botId)!} project={state.shared?.projectId} />
                   ) : tab?.kind === "vault" ? (
@@ -1347,9 +1358,9 @@ function Bops({ state }: { state: AppState | null }) {
                     </div>
                   ) : null}
                   {/* Your Mac stays capturing, hidden, for two minutes after you leave it (restarting capture is slow). */}
-                  {(showingMac || macHeld) && (
+                  {(showingMac || (!WINDOWS && macHeld)) && (
                     <div className={`min-h-0 flex-1 flex-col px-5 pb-4 pt-4 ${showingMac ? "flex" : "hidden"}`}>
-                      <MacComputer
+                      {WINDOWS ? <PcComputer onFocus={() => { setMacFocus(true); setCrmFocus(null); setFocus(true); }} /> : <MacComputer
                         state={state}
                         mode="panel"
                         showThread={thread?.runsOn === "mac" ? thread.id : undefined}
@@ -1360,12 +1371,12 @@ function Bops({ state }: { state: AppState | null }) {
                         }}
                         onOpenThread={openThread}
                         hidden={!showingMac}
-                      />
+                      />}
                     </div>
                   )}
                   {heldBot && (
                     <div className={`min-h-0 flex-1 flex-col px-5 pb-4 pt-4 ${showingComputer ? "flex" : "hidden"}`}>
-                      <ComputerView
+                      {WINDOWS && !state.shared && state.host === "mac" ? <PcBotComputer name={heldBot.name} local={!!state.desktopRoutinesHere} onBrowser={() => showBrowser(heldBot.id)} onSettings={() => openSettings("mac")} /> : <ComputerView
                         key={heldBot.id}
                         state={state}
                         bot={heldBot}
@@ -1377,7 +1388,7 @@ function Bops({ state }: { state: AppState | null }) {
                         onFocus={clickIn}
                         onShowScreen={showScreen}
                         hidden={!showingComputer}
-                      />
+                      />}
                     </div>
                   )}
                 </section>
@@ -1464,7 +1475,7 @@ function Bops({ state }: { state: AppState | null }) {
           </div>
         )}
         {/* What bots are doing on the user's Mac, live, in the corner (hidden while the Your Mac tab is open). */}
-        {!(tab?.kind === "mac" && panelOpen) && !state.shared && <MacPreviews state={state} onOpen={openMac} />}
+        {!WINDOWS && !(tab?.kind === "mac" && panelOpen) && !state.shared && <MacPreviews state={state} onOpen={openMac} />}
       </div>
     </ComposerBridgeProvider>
     </LocalOnly.Provider>
@@ -1830,11 +1841,11 @@ function SelfHosting({ state }: { state: AppState }) {
         <div className="flex gap-2.5">
           <div className={`flex flex-1 flex-col gap-1.5 rounded-[14px] p-3.5 ${option(!tailnet)}`}>
             <span className="flex items-center justify-between">
-              <span className="text-[14px] font-semibold">{state.host === "mac" ? "Direct on this Mac" : "Through Orgo"}</span>
+              <span className="text-[14px] font-semibold">{state.host === "mac" ? (WINDOWS ? "Local Podman connection" : "Direct on this Mac") : "Through Orgo"}</span>
               {radio(!tailnet)}
             </span>
             <span className="text-[12.5px] leading-[18px] text-[#3A3A38]">
-              {state.host === "mac" ? "Screens are mirrored as live pages straight from the browsers here." : "Screenshots and input go through Orgo's API. Works everywhere."}
+              {state.host === "mac" ? (WINDOWS ? "Local browser frames and input stay on this PC." : "Screens are mirrored as live pages straight from the browsers here.") : "Screenshots and input go through Orgo's API. Works everywhere."}
             </span>
           </div>
           <div className={`flex flex-1 flex-col gap-1.5 rounded-[14px] p-3.5 ${option(tailnet)}`}>
@@ -1859,7 +1870,7 @@ function SelfHosting({ state }: { state: AppState }) {
         {state.bots.map((b) => (
           <div key={b.id} className="flex items-center border-b border-[#F0F0EE] py-2 last:border-0">
             <span className="w-[200px] text-[13px] font-medium">{b.name}</span>
-            <span className="font-mono text-[12px] text-[#3A3A38]">{!state.shared && state.host === "mac" ? "this Mac" : b.computerId ? `${b.computerId}${b.tailnet ? ` · ${b.tailnet.ip}` : ""}` : sharesComputer(b) ? `shares ${workBot(b, state.bots).name}'s` : "none yet"}</span>
+            <span className="font-mono text-[12px] text-[#3A3A38]">{!state.shared && state.host === "mac" ? THIS_COMPUTER : b.computerId ? `${b.computerId}${b.tailnet ? ` · ${b.tailnet.ip}` : ""}` : sharesComputer(b) ? `shares ${workBot(b, state.bots).name}'s` : "none yet"}</span>
           </div>
         ))}
       </div>
@@ -1869,23 +1880,43 @@ function SelfHosting({ state }: { state: AppState }) {
 
 /** Where your bots work: their own cloud computers (the default), or this Mac. One switch for every workspace. */
 function WhereBotsWork({ state }: { state: AppState }) {
-  const setHost = (host: Host) => void post("/api/host", { host });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const selected = (host: Host) => state.host === host && (!WINDOWS || host !== "mac" || !!state.desktopRoutinesHere);
+  const setHost = async (host: Host) => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await post("/api/host", { host });
+      if (!res.ok) setError((await res.json().catch(() => null))?.error ?? "Couldn't change where your bots work.");
+    } catch {
+      setError("Couldn't reach Bops. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="flex flex-col gap-2 px-[22px] pt-4">
       <span className="text-[13px] font-semibold">Where your bots work</span>
       <div className="flex gap-2.5">
         {(["orgo", "mac"] as const).map((h) => (
-          <button key={h} onClick={() => setHost(h)} className={`flex flex-1 flex-col gap-1.5 rounded-[14px] p-3.5 text-left ${option(state.host === h)}`}>
+          <button key={h} onClick={() => void setHost(h)} disabled={busy || !!state.shared} aria-pressed={selected(h)} className={`flex flex-1 flex-col gap-1.5 rounded-[14px] p-3.5 text-left disabled:opacity-60 ${option(selected(h))}`}>
             <span className="flex items-center justify-between">
-              <span className="text-[14px] font-semibold">{h === "orgo" ? "Their own cloud computers" : "This Mac"}</span>
-              {radio(state.host === h)}
+              <span className="text-[14px] font-semibold">{h === "orgo" ? "Their own cloud computers" : THIS_COMPUTER}</span>
+              {radio(selected(h))}
             </span>
             <span className="text-[12.5px] leading-[18px] text-[#6B6B6B]">
-              {h === "orgo" ? "Recommended. Your bots work on a computer in the cloud, with 4 screens, and keep working when your Mac is closed. A bot can have one of its own." : "Bots work in background browsers on this Mac, from your own internet connection."}
+              {WINDOWS
+                ? h === "orgo" ? "Routines can use Orgo cloud computers while your PC is off." : "Run local threads and routines with Codex or Claude Code. Computer tasks use a Podman Local VM."
+                : h === "orgo" ? "Your bots work on a computer in the cloud, with 4 screens, and keep working when your Mac is closed. A bot can have one of its own." : "Bots work in background browsers on this Mac, from your own internet connection."}
             </span>
           </button>
         ))}
       </div>
+      {WINDOWS && state.host === "mac" && !state.desktopRoutineDevice && <p className="text-[12px] text-pencil">Select This PC to activate local scheduling on this device.</p>}
+      {WINDOWS && state.desktopRoutineDevice && !state.desktopRoutinesHere && <p className="text-[12px] text-pencil">Another PC owns local scheduling for this account.</p>}
+      {WINDOWS && selected("mac") && <p className="text-[12px] text-pencil">Keep Bops open, the PC awake, and Podman running for scheduled computer tasks.</p>}
+      {error && <p role="alert" className="text-[12px] text-[#AE3428]">{error}</p>}
     </div>
   );
 }
@@ -2086,6 +2117,7 @@ export function Settings({
   const adminHere = state.shared?.role === "admin";
   const fits = (p?: SettingsPane) => !!p && (p !== "domains" || domains) && (p !== "apps" || apps) && (!state.shared || ((p !== "team" || adminHere) && (p !== "chart" || mayChange(state, "chart", { soon: true })) && p !== "email"));
   const [pane, setPane] = useState<SettingsPane>(fits(at) ? at! : "profile");
+  const [desktopBotId, setDesktopBotId] = useState<string>();
   const [was, setWas] = useState(`${at}:${atAt}`);
   if (was !== `${at}:${atAt}`) {
     setWas(`${at}:${atAt}`);
@@ -2107,6 +2139,7 @@ export function Settings({
   const ws = currentWorkspace(state);
   const shared = !!state.shared;
   const team = teamOf(state);
+  const desktopBot = team.find((b) => b.id === desktopBotId) ?? team.find((b) => b.isMain) ?? team[0];
   const own = state.workspaces ?? [];
   const wsName = shared ? (state.shared?.name ?? "") : (own.find((w) => w.id === ws)?.name ?? "Main");
   const people = shared ? 0 : Object.keys(own.find((w) => w.id === ws)?.memberAccess ?? {}).length;
@@ -2119,9 +2152,9 @@ export function Settings({
     item("plan", "Plan and credit"),
     item("usage", "Usage"),
     item("reach", "How bots reach you"),
-    ...(BRAINS_ON ? [item("ai", "AI plans")] : []),
+    ...(BRAINS_ON || state.desktopAgents ? [item("ai", "AI plans")] : []),
     ...(!selfHosted ? [item("privacy", "Privacy")] : []),
-    item("mac", "This Mac"),
+    item("mac", THIS_COMPUTER),
   ];
   const workspace: NavItem[] = [
     item("general", "General"),
@@ -2209,11 +2242,17 @@ export function Settings({
         <ReachSettings />
       </>
     );
-  else if (pane === "ai" && BRAINS_ON)
+  else if (pane === "ai" && (BRAINS_ON || state.desktopAgents))
     body = (
       <>
         <PaneHead title="AI plans" />
-        <BrainSettings state={state} onShowScreen={onShowScreen} onOpenVault={onOpenVault} />
+        {state.desktopAgents && desktopBot && (
+          <div className="mb-4 flex flex-col gap-2">
+            {team.length > 1 && <label className="flex items-center gap-2 text-[13px]">Bot <select value={desktopBot.id} onChange={(event) => setDesktopBotId(event.target.value)} className="rounded-lg border border-black/10 bg-white px-2 py-1">{team.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>}
+            <DesktopRoster key={desktopBot.id} state={state} bot={desktopBot} />
+          </div>
+        )}
+        {BRAINS_ON && <BrainSettings state={state} onShowScreen={onShowScreen} onOpenVault={onOpenVault} />}
       </>
     );
   else if (pane === "privacy")
@@ -2228,11 +2267,11 @@ export function Settings({
   else if (pane === "mac")
     body = (
       <>
-        <PaneHead title="This Mac" />
+        <PaneHead title={THIS_COMPUTER} />
         <ThisMacSettings state={state} />
         <WhereBotsWork state={state} />
         {/* Bots in browsers on this Mac have no computer to run routines on; a self-hosted Bops has no Bops Cloud for a runner to share the state through. */}
-        {!selfHosted && state.host !== "mac" && <RunsOnSettings state={state} />}
+        {!WINDOWS && !state.desktopRoutineDevice && !selfHosted && state.host !== "mac" && <RunsOnSettings state={state} />}
         {/* (A shared workspace's computers are its owner's: nothing asks this Mac's Orgo about their keys.) */}
         <BotComputers state={state} padded={!selfHosted} askKeys={!selfHosted && !state.shared} />
         {selfHosted && <SelfHosting state={state} />}

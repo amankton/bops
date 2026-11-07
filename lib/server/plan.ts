@@ -173,7 +173,7 @@ export async function bopsBillingLink(key: string, what: { tier: "pro_bops" | "m
   const got = await postOrgo<{ url?: unknown; error?: unknown; code?: unknown }>(key, what === "manage" ? "/api/bops/portal" : "/api/bops/checkout", what === "manage" ? {} : what);
   if (!got) return { error: "Couldn't reach Orgo. Check your internet connection and try again.", status: 502 };
   if (got.status >= 200 && got.status < 300 && typeof got.json.url === "string" && /^https:\/\//.test(got.json.url)) return { url: got.json.url };
-  if (got.status === 401 || got.status === 403) return { error: "Orgo didn't accept this Mac's sign-in. Sign out, then sign in again.", status: 401 };
+  if (got.status === 401 || got.status === 403) return { error: "Orgo didn't accept your desktop sign-in. Sign out, then sign in again.", status: 401 };
   if (got.status === 404 || got.json.code === "bops_plans_off") return { error: "Upgrades open soon.", status: got.status === 404 ? 404 : 503, soon: true };
   if (got.json.code === "no_bops_plan") return { error: "You don't have a paid plan to manage yet.", status: 409 };
   return { error: typeof got.json.error === "string" ? got.json.error : `Orgo couldn't open that page (${got.status}). Try again in a minute.`, status: 502 };
@@ -201,7 +201,7 @@ export function usageRefusal(): Response | null {
  * the purchase's Idempotency-Key.
  */
 
-const SIGNED_OUT = "Orgo didn't accept this Mac's sign-in. Sign out, then sign in again.";
+const SIGNED_OUT = "Orgo didn't accept your desktop sign-in. Sign out, then sign in again.";
 
 /** Orgo doesn't sell AI credit yet: in its words, for the app. */
 export const CREDIT_OFF = { error: "Adding credit opens soon.", code: "bops_credit_off" };

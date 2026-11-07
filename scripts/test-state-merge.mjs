@@ -17,8 +17,7 @@
 // Usage: node scripts/test-state-merge.mjs
 import assert from "node:assert/strict";
 
-const root = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
-const M = await import(`${root}/lib/server/state-merge.ts`);
+const M = await import("../lib/server/state-merge.ts");
 
 let failures = 0;
 let passed = 0;
@@ -392,7 +391,7 @@ check("a request changed on both sides keeps its reply, never back to unanswered
 
 /* ---------------- A routine edited on one side while the other ran it ---------------- */
 
-const Sched = await import(`${root}/cloud/schedule.ts`);
+const Sched = await import("../cloud/schedule.ts");
 const D = Date.parse("2026-10-20T00:00:00Z");
 /** The next time as persist-cloud.ts works it out, at a fixed now: 10 AM UTC that day. */
 const nextRunOf = (r) => Sched.nextRun(r.schedule, D + 10 * H, r.timeZone, r.lastRunAt);
@@ -677,6 +676,17 @@ check("a bot's settings page settings (Workspace.botSettings): two Macs setting 
     assert.deepEqual([both[0].memberAccess[AVA].apps, both[0].memberAccess[AVA].computer], ["read", "use"], "Your Apps and it, both");
   });
 }
+
+check("PC Composio logins survive a cloud sync and stay scoped to their original device", () => {
+  const cloud = { id: "ca_cloud" };
+  const pc = { id: "ca_pc", composioDevice: "pc-project" };
+  const blob = M.toShared({ accounts: [cloud, pc] }, "pc");
+  assert.deepEqual(blob.accounts, [cloud]);
+  assert.deepEqual(M.fromShared(blob, "other").accounts, [cloud]);
+  const other = M.toShared({ ...M.fromShared(blob, "other"), accounts: [{ ...cloud, label: "Work" }] }, "other");
+  assert.deepEqual(M.fromShared(M.merge3(blob, blob, other), "pc").accounts, [{ ...cloud, label: "Work" }, pc]);
+  assert.deepEqual(M.toShared({ ...M.fromShared(blob, "pc"), accounts: [cloud] }, "pc").accounts, [cloud]);
+});
 
 console.log(`state merge: ${passed} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

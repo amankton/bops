@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { YOUR_COMPUTER } from "@/lib/platform";
 import { live, type AppState } from "@/lib/types";
 import { MacStream, useAppWindowSource } from "./mac-screens";
 import { Mascot } from "./mascot";
@@ -38,7 +39,7 @@ export function MacSettings({ state }: { state: AppState }) {
             <MacIcon size={20} />
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-[20px] font-semibold leading-6 tracking-[-0.01em]">Your Mac</span>
+            <span className="text-[20px] font-semibold leading-6 tracking-[-0.01em]">{YOUR_COMPUTER}</span>
             <span className="flex items-center gap-1.5 text-[13px] leading-[19px] text-[#6B6B6B]">
               <span className={`size-2 rounded-full ${m?.ready ? "bg-[#2BB673]" : "bg-[#C9C9C6]"}`} />
               {m?.ready ? "Bots can browse here in a Chrome of their own, on your home internet, on your credit. They can't use your Mac's apps for now." : (m?.reason ?? "Checking…")}

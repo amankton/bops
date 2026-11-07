@@ -43,7 +43,7 @@ import { appVersion } from "./app-version";
  * 8897 (the relay) or 9200 to 9399 (bots' and computers' DevTools).
  */
 
-/** An address Bops won't open: not http(s), an odd port, a password in it, this Mac or a private network, or not a page. */
+/** An address Bops won't open: not http(s), an odd port, a password in it, this computer or a private network, or not a page. */
 export class FetchRefused extends Error {
   constructor(message: string) {
     super(message);
@@ -175,7 +175,7 @@ function onThisNetwork(address: string, nets = localNetworks()): boolean {
   return kind ? nets.check(a, kind === 6 ? "ipv6" : "ipv4") : false;
 }
 
-/** A host name that only means something on this Mac or a private network. */
+/** A host name that only means something on this computer or a private network. */
 function privateName(host: string): boolean {
   if (!host.includes(".")) return true;
   return /(^|\.)(localhost|local|internal|ts\.net|home\.arpa)$/.test(host);
@@ -198,7 +198,7 @@ function allowedForTests(u: URL): boolean {
   return list.split(",").some((entry) => entry.trim().toLowerCase() === key);
 }
 
-const PRIVATE = "That address is on this Mac or a private network, so Bops won't open it.";
+const PRIVATE = "That address is on this computer or a private network, so Bops won't open it.";
 
 /**
  * The checks that need no lookup: a valid http(s) address, no password, port 80 or 443, and not a
@@ -249,7 +249,7 @@ async function addressesOf(u: URL, signal: AbortSignal): Promise<LookupAddress[]
   }
   if (!found.length) throw new Error(`Couldn't find a website called ${host}.`);
   const nets = localNetworks();
-  if (!allowedForTests(u) && found.some((a) => isBlockedAddress(a.address) || onThisNetwork(a.address, nets))) throw new FetchRefused(`${host} points to this Mac or a private network, so Bops won't open it.`);
+  if (!allowedForTests(u) && found.some((a) => isBlockedAddress(a.address) || onThisNetwork(a.address, nets))) throw new FetchRefused(`${host} points to this computer or a private network, so Bops won't open it.`);
   return found;
 }
 

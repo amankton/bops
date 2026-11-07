@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import ts from "typescript";
 
 process.env.NEXT_PUBLIC_BOPS_BRAINS = "1";
-const root = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+const root = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
 registerHooks({
   resolve(specifier, context, next) {
     if (specifier.startsWith("@/")) specifier = pathToFileURL(`${root}/${specifier.slice(2)}`).href;
@@ -67,12 +67,13 @@ globalThis.EventSource = class {
 
 const NORTH_PROJECT = "66666666-2222-4333-8444-555555555555";
 /** Bops, faked: what each request sent, and the keys, members and uses it answers with. */
-const bops = { sent: [], keys: [], providers: [], keysInfo: {}, patch: null };
+const bops = { sent: [], keys: [], providers: [], keysInfo: {}, patch: null, catalog: { available: true, apps: [] } };
 const json = (j, status = 200) => ({ ok: status < 400, status, json: async () => j });
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
   const method = init.method ?? "GET";
   if (method === "GET") {
+    if (u === "/api/apps/catalog") return json(bops.catalog);
     if (u.startsWith("/api/keys")) return json({ signedIn: true, keys: bops.keys, providers: bops.providers, workspaceKeys: true, ...bops.keysInfo });
     if (u.startsWith("/api/members"))
       return json({
@@ -94,6 +95,10 @@ globalThis.fetch = async (url, init = {}) => {
     return json({}, 404);
   }
   bops.sent.push({ url: u, method, body: init.body ? JSON.parse(init.body) : undefined });
+  if (u === "/api/apps/composio") {
+    if (JSON.parse(init.body).key !== "fixture-accepted") return json({ error: "Composio rejected this project API key." }, 400);
+    bops.catalog = { available: true, canSetUp: true, onThisPC: true, apps: [{ app: "github", name: "GitHub", auth: "oauth", tags: [] }] };
+  }
   if (bops.patch && u === "/api/keys" && method === "PATCH") return json(...bops.patch);
   return json({ ok: true });
 };
@@ -245,6 +250,72 @@ await test("the footer's Logins opens Settings at Logins, and the bot panel's Ma
 });
 
 /* ---------------- The Logins page ---------------- */
+
+await test("Logins opens Composio setup, reports a rejected key, and loads the catalog after saving", async () => {
+  const previous = bops.catalog;
+  bops.catalog = { available: false, canSetUp: true, onThisPC: false, apps: [] };
+  const m = await mount(settings(stateOf()));
+  try {
+    const page = m.box.querySelector("[data-logins]");
+    await click(buttonOf(page, "Connect"));
+    await click([...page.querySelectorAll("button")].find((b) => b.textContent.startsWith("An app")));
+    const picker = page.querySelector("[data-app-picker]");
+    assert.match(picker.textContent, /Set up Composio/);
+    await input(picker.querySelector('input[type="password"]'), "fixture-rejected");
+    await submit(picker.querySelector("form"));
+    assert.match(picker.querySelector('[role="alert"]').textContent, /rejected this project API key/);
+    await input(picker.querySelector('input[type="password"]'), "fixture-accepted");
+    await submit(picker.querySelector("form"));
+    assert.equal(picker.querySelector('input[type="password"]'), null);
+    assert.ok(buttonOf(picker, "Composio settings"));
+    await click([...picker.querySelectorAll("button")].find((b) => b.textContent.includes("GitHub")));
+    assert.match(picker.textContent, /Connect GitHub/);
+  } finally {
+    bops.catalog = previous;
+    await m.done();
+  }
+});
+
+await test("Logins can browse and search beyond the popular apps", async () => {
+  const previous = bops.catalog;
+  const apps = Array.from({ length: 105 }, (_, i) => {
+    const n = String(i + 1).padStart(3, "0");
+    return { app: `example_${n}`, name: `Example ${n}`, auth: "oauth", tags: [] };
+  });
+  bops.catalog = { available: true, apps: [{ app: "github", name: "GitHub", auth: "oauth", tags: [] }, ...apps.reverse()] };
+  const m = await mount(settings(stateOf()));
+  try {
+    const logins = m.box.querySelector("[data-logins]");
+    await click(buttonOf(logins, "Connect"));
+    await click([...logins.querySelectorAll("button")].find((b) => b.textContent.startsWith("An app")));
+    const picker = logins.querySelector("[data-app-picker]");
+    assert.match(picker.textContent, /Popular for business/);
+    assert.doesNotMatch(picker.textContent, /Example 001/);
+    await click(buttonOf(picker, "Browse all 106 apps"));
+    assert.match(picker.textContent, /1 to 50 of 106/);
+    assert.match(picker.textContent, /Example 001.*Example 050/);
+    await click(buttonOf(picker, "Next"));
+    assert.match(picker.textContent, /51 to 100 of 106/);
+    assert.match(picker.textContent, /Example 051.*Example 100/);
+    await click(buttonOf(picker, "Next"));
+    assert.match(picker.textContent, /101 to 106 of 106/);
+    assert.ok(buttonOf(picker, "Next").hasAttribute("disabled"));
+    await click(buttonOf(picker, "Previous"));
+    assert.match(picker.textContent, /51 to 100 of 106/);
+    const search = picker.querySelector('input[aria-label="Search apps"]');
+    search.setAttribute("type", "text"); // Linkedom does not supply the browser's default input type.
+    await input(search, "Example");
+    assert.match(picker.textContent, /1 to 50 of 105/);
+    await click(buttonOf(picker, "Next"));
+    await click(buttonOf(picker, "Next"));
+    assert.match(picker.textContent, /101 to 105 of 105/);
+    await click(buttonOf(picker, "Example 001"));
+    assert.match(picker.textContent, /Connect Example 001/);
+  } finally {
+    bops.catalog = previous;
+    await m.done();
+  }
+});
 
 await test("Logins: the open workspace's apps and site logins by service, who connected each, their bots and kinds; the other workspaces' folded under them", async () => {
   const m = await mount(settings(stateOf()));
@@ -445,17 +516,19 @@ const sharedState = (keys) =>
   });
 const tab = (page, name) => [...page.querySelectorAll('[role="tab"]')].find((t) => t.textContent.startsWith(name));
 /** The key form's Save (a submit button: linkedom has no default action, so the form is submitted). */
-const submit = (form) =>
-  act(async () => {
+function submit(form) {
+  return act(async () => {
     form.dispatchEvent(new win.Event("submit", { bubbles: true, cancelable: true }));
     await settle();
   });
-const input = (el, value) =>
-  act(async () => {
+}
+function input(el, value) {
+  return act(async () => {
     Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set.call(el, value);
     el.dispatchEvent(new win.Event("input", { bubbles: true }));
     await settle();
   });
+}
 
 await test("Keys in a shared workspace, without Keys there: no keys and no Add, and plainly who gives Keys", async () => {
   bops.providers = PROVIDERS;

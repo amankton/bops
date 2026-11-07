@@ -3,6 +3,7 @@ import { getState } from "@/lib/server/store";
 import type { Delivery, Routine, Schedule } from "@/lib/types";
 import { notReady } from "@/lib/server/ready";
 import { fromBopsWindow } from "@/lib/server/ui-token";
+import { localRoutinesOnly } from "@/lib/server/desktop-agents";
 
 /**
  * Routines from the Bops window: make one, change it, pause or resume it, run it now, delete it. Only from
@@ -68,10 +69,12 @@ export async function PATCH(request: Request) {
   }
   if (action === "run") {
     if (!getState().routines.some((r) => r.id === id)) return bad("No such routine.");
+    const local = localRoutinesOnly();
     // Asked for in the app: its result goes where the routine sends it, never to a text or channel turn running meanwhile.
     const started = runRoutine(id, { manual: "app" }).catch((e: Error) => ({ at: Date.now(), status: "failed" as const, error: e.message }));
     // A reminder is done at once; anything else answers with how it started and goes on.
     const run = await Promise.race([started, new Promise<undefined>((r) => setTimeout(r, 300))]);
+    if (local && run?.status === "skipped" && run.error) return Response.json({ error: run.error }, { status: 409 });
     return Response.json({ run: run ?? getState().routines.find((r) => r.id === id)?.last });
   }
   if (edit && typeof edit === "object") {

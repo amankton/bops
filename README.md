@@ -125,6 +125,8 @@ Running Bops yourself on your own keys? Bops plans don't apply: you pay each pro
 
 ## Download
 
+A development Windows x64 port is available in this source tree. See [Windows build instructions and current limitations](docs/windows.md). Windows installers are not published on bops.bot.
+
 <p>
   <a href="https://bops.bot/download/Bops.dmg"><img src="https://img.shields.io/badge/Download_for_Mac-E9FF3B?style=for-the-badge" alt="Download for Mac"></a>
 </p>

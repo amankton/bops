@@ -22,6 +22,9 @@ import { giveAppsRead, retryHeldRenameOnStart, startProjectBinding } from "@/lib
 import { startMadeAppsSync } from "@/lib/server/made-apps-sync";
 import { startCrmSync } from "@/lib/server/crm-sync";
 import { startPrivacy } from "@/lib/server/privacy";
+import { desktopAgentsAvailable, localRoutinesHere } from "@/lib/server/desktop-agents";
+import { fromBopsWindow } from "@/lib/server/ui-token";
+import { loadDesktopComposio } from "@/lib/server/composio-desktop";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +44,7 @@ export const dynamic = "force-dynamic";
  * With a workspace shared with the user open, it's that workspace's state, read only (lib/server/shared.ts).
  */
 export async function GET(request: Request) {
+  await loadDesktopComposio().catch(() => {});
   ensureCloud();
   startMail();
   startPhone();
@@ -67,7 +71,8 @@ export async function GET(request: Request) {
   const shared = sharedForApp(getState());
   const version = shared?.version ?? getVersion();
   if (have !== null && Number(have) === version) return Response.json({ version });
-  return Response.json({ version, state: forApp(shared?.state ?? getState()) });
+  const desktopAgents = !shared && desktopAgentsAvailable() && fromBopsWindow(request);
+  return Response.json({ version, state: { ...forApp(shared?.state ?? getState()), desktopAgents, desktopRoutinesHere: desktopAgents && localRoutinesHere() } });
 }
 
 /**

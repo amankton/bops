@@ -2,6 +2,7 @@
 
 import { createContext, createElement, useEffect, useRef, useState } from "react";
 import { APPS_NAME, appsLine } from "@/lib/apps-access";
+import { WINDOWS, YOUR_COMPUTER } from "@/lib/platform";
 import { GROUP_NAME } from "@/lib/memory-categories";
 import { live, type AppState, type Bot } from "@/lib/types";
 import { computerOf } from "@/lib/screens";
@@ -68,13 +69,16 @@ export const CHAT_TAB = "chat";
  */
 export const BROWSER_TAB = "browser";
 
+export const localBrowserHere = (state: AppState) => !state.shared && state.host === "mac" && state.desktopRoutinesHere;
+
 /**
  * Whether the viewer has `bot`'s browser in a tab beside its computer's: the owner, for a bot on a computer that's up; an
  * Admin of a shared workspace (whose computer tab is the live view, SharedScreen), for a bot whose computer Bops Cloud
  * shows them (SharedOpen.screens).
  */
 export const browserBeside = (state: AppState, bot: Bot | undefined): bot is Bot =>
-  !!bot && bot.runsOn !== "mac" && (state.shared ? state.shared.role === "admin" && !!state.shared.screens?.includes(bot.id) : computerOf(state, bot)?.computerStatus === "ready");
+  !!bot && (!!localBrowserHere(state) || (bot.runsOn !== "mac" &&
+    (state.shared ? state.shared.role === "admin" && !!state.shared.screens?.includes(bot.id) : computerOf(state, bot)?.computerStatus === "ready")));
 
 /**
  * Whether the viewer may use `bot`'s browser here: the owner and an Admin (beside the computer, browserBeside); a Member
@@ -259,7 +263,7 @@ function Tab({ state, tab: t, on, closable, onPick, onClose }: { state: AppState
         ? b && seesBrowser(state, b)
           ? `${b.name}'s browser`
           : b?.runsOn === "mac"
-          ? "Owner's Mac"
+          ? (WINDOWS ? "Owner's computer" : "Owner's Mac")
           : "Owner's computer"
         : host && host.id !== b?.id
         ? `${host.name}'s computer`
@@ -277,7 +281,7 @@ function Tab({ state, tab: t, on, closable, onPick, onClose }: { state: AppState
                 : hosted
                   ? hosted.title
                 : t.kind === "mac"
-              ? "Your Mac"
+              ? YOUR_COMPUTER
               : t.kind === "crm"
                 ? t.file
                 : t.kind === "memory"
@@ -598,8 +602,8 @@ export function NewTab({
             <MacIcon />
           </span>
           <span className="flex flex-col">
-            <span className="text-[14px] font-medium leading-[18px]">Your Mac</span>
-            <span className="text-[12px] leading-4 text-[#6B6B6B]">{state.mac?.ready ? "Where bots work when a task needs your Mac" : (state.mac?.reason ?? "Checking…")}</span>
+            <span className="text-[14px] font-medium leading-[18px]">{YOUR_COMPUTER}</span>
+            <span className="text-[12px] leading-4 text-[#6B6B6B]">{WINDOWS ? "View your Windows displays and open windows" : state.mac?.ready ? "Where bots work when a task needs your Mac" : (state.mac?.reason ?? "Checking…")}</span>
           </span>
         </button>
         <span className="px-1 text-[12px] font-medium leading-4 text-[#9A9A98]">Your bots</span>

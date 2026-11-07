@@ -19,7 +19,7 @@ const allowed = (request: Request) => !onPostgres() && ["localhost", "127.0.0.1"
 export async function POST(request: Request) {
   const unready = notReady();
   if (unready) return unready;
-  if (!allowed(request)) return Response.json({ ok: false, error: "Adding a number only works in the app on your Mac for now." }, { status: 403 });
+  if (!allowed(request)) return Response.json({ ok: false, error: "Adding a number requires the Bops desktop app." }, { status: 403 });
   const { number, code } = (await request.json().catch(() => ({}))) as { number?: unknown; code?: unknown };
   if (typeof number !== "string" || typeof code !== "string") return Response.json({ ok: false, error: "Enter the code from the text." }, { status: 400 });
   const r = await checkOwnerPhone(number.slice(0, 40), code.slice(0, 20));

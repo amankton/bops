@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   const unready = notReady();
   if (unready) return unready;
-  if (!fromThisMac(request)) return Response.json({ ok: false, error: "Adding an email only works in the app on your Mac for now." }, { status: 403 });
+  if (!fromThisMac(request)) return Response.json({ ok: false, error: "Adding an email requires the Bops desktop app." }, { status: 403 });
   const { address } = (await request.json().catch(() => ({}))) as { address?: unknown };
   if (typeof address !== "string" || !address.trim()) return Response.json({ ok: false, error: "That doesn't look like an email address." }, { status: 400 });
   const r = await startOwnerEmail(address.slice(0, 320));

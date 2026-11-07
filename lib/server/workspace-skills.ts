@@ -60,7 +60,7 @@ import { outbox } from "./sync-outbox";
  * a new version stays approved). A bot sees only a skill's name and description until it reads one
  * (read_skill), and only the published skills of its own workspace whose bots include it (none named:
  * every bot). When orgo-web has the skills routes and the workspace has its Orgo project, they're kept
- * in step with Orgo (syncSkills); otherwise they stay on this Mac. Every change here queues a sync (a new
+ * in step with Orgo (syncSkills); otherwise they stay on this computer. Every change here queues a sync (a new
  * draft too, and a bot taken off by its delete), and a sync Orgo didn't take is tried again after a
  * backoff. A delete goes to Orgo through an outbox kept with the user's folder (sync-outbox.ts), tried
  * again until Orgo took it, and a sync never brings back one still waiting there. A sync reads only what
@@ -68,12 +68,12 @@ import { outbox } from "./sync-outbox";
  * of what was deleted since: one deleted there (on another Mac, on orgo.ai) goes here too, unless it
  * changed here since the two last agreed (then it goes to Orgo again), so several Macs agree on what was
  * deleted. Without a record (the first sync, one too old, an orgo-web without it) the whole list is read,
- * and a skill this Mac had from Orgo's project (SkillRef.remotePid) that Orgo no longer lists is taken as
+ * and a skill this computer had from Orgo's project (SkillRef.remotePid) that Orgo no longer lists is taken as
  * deleted there the same way. Script approvals made here go to Orgo too (POST and DELETE
  * …/skills/approvals with the person's Bops sign-in key, through an outbox kept on disk, after the skill's
  * own sync so Orgo knows the script; one Orgo can't place yet is sent again only once a sync sent a file
  * with that content), and a sync takes the approvals the person signed in here made on orgo.ai or in Bops
- * on another Mac (never another member's: theirs doesn't run a script on this Mac), and revokes made
+ * on another Mac (never another member's: theirs doesn't run a script on this computer), and revokes made
  * there. The Mac keeps them in step: a computer's runner never syncs or sends a delete.
  *
  * Labels (lib/skill-labels.ts): every skill is listed under one (SkillRef.label), so a bot with many looks
@@ -331,7 +331,7 @@ function ownLabels(wsId: string): string[] {
   return workspaceLabels(wsId).filter((l) => !isUnsorted(l) && !presets.some((p) => sameLabel(p, l)));
 }
 
-/** Whether the model may be asked for this workspace: Suggest labels with AI on (Workspace.skillLabelsAIOff unset), never on a computer's runner, signed in on this Mac. */
+/** Whether the model may be asked for this workspace: Suggest labels with AI on (Workspace.skillLabelsAIOff unset), never on a computer's runner, signed in on this computer. */
 const suggestOn = (wsId: string) => !onRunner() && userDir() !== null && !!workspaceById(wsId) && !workspaceById(wsId)!.skillLabelsAIOff;
 
 /** One call: each skill's place in the batch to the label picked for it (one of `labels`, Unsorted, or a new one), or null when it couldn't be asked. */
@@ -1103,7 +1103,7 @@ export function publishSkill(wsId: string, kind: SkillKind, slug: string, opts: 
   const r = findRef(wsId, kind, slug);
   if (!r) throw new SkillError(`That ${kind} was deleted.`, 404);
   const b = readBundle(skillDir(wsId, kind, slug));
-  if (!b) throw new SkillError(`Its folder is gone from this Mac. Delete it, or import the folder again.`, 404);
+  if (!b) throw new SkillError(`Its folder is gone from this computer. Delete it, or import the folder again.`, 404);
   // Checked again: the folder may have been changed in Finder since.
   checkFiles(b.body, b.files);
   const versions = r.versions ?? [];
@@ -1155,7 +1155,7 @@ export function rollbackSkill(wsId: string, kind: SkillKind, slug: string, versi
   if (!r) throw new SkillError(`That ${kind} was deleted.`, 404);
   if (!r.versions?.some((v) => v.version === version)) throw new SkillError(`It has no version ${version}.`, 404);
   const dir = versionDir(wsId, kind, slug, version);
-  if (!dir || !existsSync(/*turbopackIgnore: true*/ dir)) throw new SkillError(`Version ${version} isn't on this Mac.`, 404);
+  if (!dir || !existsSync(/*turbopackIgnore: true*/ dir)) throw new SkillError(`Version ${version} isn't on this computer.`, 404);
   // The folder goes back to that version too, so what's worked on next starts from it.
   cpSync(/*turbopackIgnore: true*/ dir, skillDir(wsId, kind, slug)!, { recursive: true, force: true });
   patchRef(wsId, kind, slug, (x) => {
@@ -1168,8 +1168,8 @@ export function rollbackSkill(wsId: string, kind: SkillKind, slug: string, versi
 }
 
 /**
- * Delete a skill or app: its folder and versions on this Mac, and Orgo's copy (by its Orgo id, else by its
- * slug: one sent whose id this Mac never heard). The delete waits in an outbox on disk until Orgo took it,
+ * Delete a skill or app: its folder and versions on this computer, and Orgo's copy (by its Orgo id, else by its
+ * slug: one sent whose id this computer never heard). The delete waits in an outbox on disk until Orgo took it,
  * tried now and again after a backoff, so Orgo not answering never brings the skill back.
  */
 export async function deleteSkill(wsId: string, kind: SkillKind, slug: string): Promise<boolean> {
@@ -1186,7 +1186,7 @@ export async function deleteSkill(wsId: string, kind: SkillKind, slug: string): 
   return true;
 }
 
-/** A skill's ref, folder and versions off this Mac (nothing sent). */
+/** A skill's ref, folder and versions off this computer (nothing sent). */
 function dropLocal(wsId: string, kind: SkillKind, slug: string) {
   update((s) => {
     const ws = s.workspaces?.find((w) => w.id === wsId);
@@ -1336,7 +1336,7 @@ export function readSkill(botId: string, nameOrSlug: string, file?: string | nul
   }
   const wsId = workspaceOf(b);
   const bundle = publishedBundle(wsId, r);
-  if (!bundle) return `"${r.name}" isn't on this Mac right now.`;
+  if (!bundle) return `"${r.name}" isn't on this computer right now.`;
   if (file?.trim()) {
     const n = normalizePath(file.trim());
     const f = "reason" in n ? undefined : bundle.files.find((x) => x.path === n.path);
@@ -1366,7 +1366,7 @@ export function readSkill(botId: string, nameOrSlug: string, file?: string | nul
  * One file of a skill as a proposal reads it (skill-proposals.ts): what its bots read (`published`, the version
  * in use), or the working folder the next version is published from. SKILL.md is its text without the
  * frontmatter, as read_skill gives it. `changed`: the folder has changes not published yet. Null when it isn't
- * on this Mac (a computer's runner has only what was made there).
+ * on this computer (a computer's runner has only what was made there).
  */
 export function skillFileText(wsId: string, r: SkillRef, file: string, from: "published" | "folder"): { text: string | null; exists: boolean; binary: boolean; changed: boolean } | null {
   const pub = publishedBundle(wsId, r);
@@ -1390,7 +1390,7 @@ export function applySkillFile(wsId: string, kind: SkillKind, slug: string, file
   if (file === "SKILL.md") updateSkill(wsId, kind, slug, { body: text });
   else {
     const now = readBundle(skillDir(wsId, kind, slug));
-    if (!now) throw new SkillError("Its folder is gone from this Mac.", 404);
+    if (!now) throw new SkillError("Its folder is gone from this computer.", 404);
     const files: FileIn[] = now.files.filter((f) => f.path !== file).map((f) => ({ path: f.path, content: f.content, data: f.data, executable: f.executable }));
     const had = now.files.find((f) => f.path === file);
     files.push({ path: file, content: text, executable: !!had?.executable });
@@ -1399,7 +1399,7 @@ export function applySkillFile(wsId: string, kind: SkillKind, slug: string, file
   return publishSkill(wsId, kind, slug);
 }
 
-/** A skill's SKILL.md body as its bot follows it (a routine's, a thread's), without counting a use. Empty when it isn't on this Mac. */
+/** A skill's SKILL.md body as its bot follows it (a routine's, a thread's), without counting a use. Empty when it isn't on this computer. */
 export function skillText(botId: string, r: SkillRef): string {
   const b = bot(botId);
   const bundle = b ? publishedBundle(workspaceOf(b), r) : null;
@@ -1491,7 +1491,7 @@ export const READ_SKILL_TOOL = {
 
 export type ImportResult = { ref: SkillRef; skipped: Problem[]; warnings: Problem[]; drafted: boolean };
 
-/** A folder on this Mac read and checked as an import takes one (checkFolder), its frontmatter's name the spec's and its folder's own. */
+/** A folder on this computer read and checked as an import takes one (checkFolder), its frontmatter's name the spec's and its folder's own. */
 function readFolder(folder: string): Extract<ReturnType<typeof checkFolder>, { ok: true }> & { folderName: string } {
   let st;
   try {
@@ -1513,7 +1513,7 @@ function readFolder(folder: string): Extract<ReturnType<typeof checkFolder>, { o
 }
 
 /**
- * A folder on this Mac (picked in Finder) taken in as a new draft: checked the way orgo-web's importer
+ * A folder on this computer (picked in Finder) taken in as a new draft: checked the way orgo-web's importer
  * checks one (junk and links out of the folder skipped, a file holding a secret left out and listed by
  * path, line and kind, never its text; no SKILL.md, and README.md or SPEC.md is drafted from), its
  * frontmatter's name, when it says one, the spec's and the folder's own name.
@@ -1536,7 +1536,7 @@ export function importFolder(wsId: string, folder: string, kind: SkillKind = "sk
 }
 
 /**
- * Update from folder: a folder on this Mac taken in as an existing skill's next version, checked as an import
+ * Update from folder: a folder on this computer taken in as an existing skill's next version, checked as an import
  * is (importFolder), its name, when it says one, this skill's. Its label, its bots and its versions stay; its
  * name stays too (the folder's description and text come in). A draft of the next version, published at once
  * with `publish`.
@@ -1709,7 +1709,7 @@ function sharers(botId: string): string[] {
 }
 
 /**
- * The bot's skills as folders in `dir` for a task on this Mac (made when missing; the task's folder is
+ * The bot's skills as folders in `dir` for a task on this computer (made when missing; the task's folder is
  * fresh each run), and its apps beside it (`../apps`). Scripts not approved yet aren't executable.
  */
 export function writeSkillFiles(botId: string, dir: string): void {
@@ -2110,7 +2110,7 @@ function approvalChanged(wsId: string, sha256: string, on: boolean, path?: strin
 /**
  * Send a workspace's waiting approvals and revokes (every workspace's without one). An approval Orgo can't
  * place yet (404 unknown_sha: no file of the workspace's skills on Orgo has that content, as a draft of a
- * published skill until it's published) stays on this Mac without a retry on a timer, and goes again only
+ * published skill until it's published) stays on this computer without a retry on a timer, and goes again only
  * after a sync sent a file with that content (`pushed`) or at the next start; one whose script is in none
  * of the workspace's skills any more (changed again, or deleted) goes from the outbox. One Orgo didn't
  * take for now is tried again after a backoff. The key must be the person's Bops sign-in key (orgo-web's
@@ -2152,7 +2152,7 @@ async function flushApprovals(wsId?: string, pushed?: Set<string>): Promise<bool
       continue;
     }
     if (code === "session_required") {
-      if (!g2.bopsApprovalsSaid) console.warn("[skills] Orgo takes script approvals only from a person signed in to Bops; this key isn't, so they stay on this Mac");
+      if (!g2.bopsApprovalsSaid) console.warn("[skills] Orgo takes script approvals only from a person signed in to Bops; this key isn't, so they stay on this computer");
       g2.bopsApprovalsSaid = true;
       approvalsOut.done([e.id]);
       continue;
@@ -2238,7 +2238,7 @@ async function pullApprovals(wsId: string, pid: string) {
 
 /* ---------------- What a sync reads ---------------- */
 
-/** The time of this Mac's last whole sync of a workspace with Orgo (orgo-web's `at`), kept in its folder for ?since=. */
+/** The time of this computer's last whole sync of a workspace with Orgo (orgo-web's `at`), kept in its folder for ?since=. */
 const sinceFile = (wsId: string) => {
   const dir = workspaceDir(wsId);
   return dir ? join(/*turbopackIgnore: true*/ dir, ".orgo-since.json") : null;
@@ -2293,7 +2293,7 @@ export type SyncResult = { mode: "local" | "orgo"; pushed: number; pulled: numbe
 
 /**
  * Keep a workspace's skills in step with Orgo's (GET/POST/PATCH /api/workspaces/{project}/skills), keyed
- * by slug, the later change winning (Orgo's updated_at against this Mac's updatedAt): a skill only here
+ * by slug, the later change winning (Orgo's updated_at against this computer's updatedAt): a skill only here
  * goes to Orgo, one only on Orgo comes here, one changed on both sides takes the later. A workspace with
  * no Orgo project, or an Orgo without the routes, stays local and nothing is sent.
  *
@@ -2336,7 +2336,7 @@ async function syncOnce(wsId: string): Promise<SyncResult> {
   // Deletes waiting go first: a sync never brings back one Orgo hasn't taken yet.
   skillDeletesOnStart();
   if (!(await flushDeletes(wsId))) res.retry = true;
-  // Renames waiting go next: Orgo's labels are this Mac's before the two are compared.
+  // Renames waiting go next: Orgo's labels are this computer's before the two are compared.
   if (!(await flushRenames(wsId))) res.retry = true;
   // Only what changed since the last whole sync, with Orgo's record of what was deleted since.
   const since = sinceOf(wsId, pid);
@@ -2362,7 +2362,7 @@ async function syncOnce(wsId: string): Promise<SyncResult> {
     } else patchRef(wsId, r.kind, r.slug, (x) => ((x.remoteId = undefined), (x.remotePid = undefined), (x.remoteAt = undefined), (x.remoteVersion = undefined), (x.remoteLabel = undefined), (x.syncedAt = undefined)));
   }
   // An answer of only what changed holds every skill here that changed there; the rest are as Orgo had them
-  // when the two last agreed. One this Mac can't place that way (never sent, or from before remoteVersion)
+  // when the two last agreed. One this computer can't place that way (never sent, or from before remoteVersion)
   // needs the whole list.
   let listed = changed;
   if (got.json.full === false) {
@@ -2506,14 +2506,14 @@ async function syncOnce(wsId: string): Promise<SyncResult> {
   // Only on Orgo: brought here.
   for (const x of remote) {
     if (refsOf(wsId).some((r) => r.remoteId === x.id || (r.slug === x.slug && r.kind === localKind(x.type)))) continue;
-    // Gone from this Mac since the list was read (deleted meanwhile): not brought back.
+    // Gone from this computer since the list was read (deleted meanwhile): not brought back.
     if (deletes.waiting(wsId).some((e) => e.item.pid === pid && (e.item.remoteId === x.id || (e.item.slug === x.slug && e.item.kind === localKind(x.type))))) continue;
     if (await pull(wsId, pid, x)) res.pulled++;
     else res.failed++;
   }
   // Every skill went both ways: the next sync reads only what changed after this one's read.
   if (!res.retry && !res.failed && typeof got.json.at === "string") keepSince(wsId, pid, got.json.at);
-  // Script approvals: this Mac's go once their skills are there (one Orgo can't place yet goes again once
+  // Script approvals: this computer's go once their skills are there (one Orgo can't place yet goes again once
   // a sync sent a file with that content), and the person's own made elsewhere come here.
   if (!(await flushApprovals(wsId, pushed))) res.retry = true;
   await pullApprovals(wsId, pid).catch((e: Error) => console.warn(`[skills] approvals from Orgo: ${e.message}`));
@@ -2546,7 +2546,7 @@ function cleanInfo(v: unknown): SkillLabelInfo[] | null {
 /**
  * What the owner wrote about the workspace's labels, in step with orgo-web's skill_labels: changed here and not
  * sent (Workspace.skillLabelInfoUnsent), the whole set goes (PUT replaces Orgo's); else Orgo's comes here (GET).
- * An Orgo without the route keeps it on this Mac. False when Orgo didn't take it for now (tried again later).
+ * An Orgo without the route keeps it on this computer. False when Orgo didn't take it for now (tried again later).
  */
 async function syncLabelInfo(wsId: string, pid: string): Promise<boolean> {
   if (labelRoutes.get(pid) === false) return true;
@@ -2726,7 +2726,7 @@ export function queueSync(wsId: string, tries = 0) {
 export const skillsRoutesSeen = (projectId: string) => routes.get(projectId);
 
 /**
- * A deleted workspace's skills and apps go from this Mac (remove.ts deleteWorkspace, while it's still
+ * A deleted workspace's skills and apps go from this computer (remove.ts deleteWorkspace, while it's still
  * listed, so its folder is found): its folder (workspaces/<project or workspace id>, with every skill's
  * files, versions and the sync's marks), its deletes, label renames and approvals still to send (Orgo's copies went with
  * its project), and a sync waiting for it.

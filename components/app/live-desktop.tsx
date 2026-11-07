@@ -515,7 +515,7 @@ export function decodeOffThePage(rfb: object) {
 }
 
 /** One screen over VNC, drawn with noVNC. `onEnd`: it couldn't connect, or it dropped, with the socket's close code when it had one. */
-function VncDesktop({
+export function VncDesktop({
   url,
   password,
   interactive,

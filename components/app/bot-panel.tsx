@@ -23,7 +23,8 @@ import { botWash, CloseButton, post } from "./ui";
 import { accountTitle, AppLogo, botApps } from "./apps";
 import { WhereToFind } from "./channels";
 import { undash } from "./side-group";
-import { mayChange, numberPausedUntil, readOnly, REPLY_WAITS_LINE, you, your, Your, yourMac, type SharedOpen } from "@/lib/shared";
+import { mayChange, numberPausedUntil, readOnly, REPLY_WAITS_LINE, you, your, yourMac, type SharedOpen } from "@/lib/shared";
+import { WINDOWS, YOUR_COMPUTER } from "@/lib/platform";
 import { memberAct } from "./shared-act";
 import { BOOK_A_CALL } from "@/lib/links";
 import { aiKinds, aiLine, SETTINGS_WORDS, teamLine, type SettingsSection } from "@/lib/bot-settings";
@@ -302,15 +303,15 @@ function Details({
       {/* Its AI: the agents its threads run on, how hard it thinks, its threads now (bot-ai.tsx). */}
       <BotAiSection state={state} bot={b} onShowScreen={onShowScreen} onOpenThread={onOpenThread} onOpenChat={() => onOpenChat(botChatId(b.id))} onAddKey={() => onOpenKeys(b.id)} className={glass} />
 
-      <div className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 ${glass}`}>
+      {(!WINDOWS || state.shared) && <div className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 ${glass}`}>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="text-[13px] font-semibold leading-4">Works on</span>
           <span className="text-[12px] leading-4 text-[#6B6B6B]">
-            {(b.runsOn ?? "auto") === "auto" ? `Its cloud computer, or ${yourMac(state)} when a task needs it` : b.runsOn === "mac" ? `${Your(state)} Mac, always` : "Its cloud computer, always"}
+            {(b.runsOn ?? "auto") === "auto" ? `Its cloud computer, or ${yourMac(state)} when a task needs it` : b.runsOn === "mac" ? `${state.shared ? "The owner's computer" : YOUR_COMPUTER}, always` : "Its cloud computer, always"}
           </span>
         </div>
         <div className="flex shrink-0 gap-0.5 rounded-full bg-black/[0.05] p-[3px]">
-          {([["auto", "Auto"], ["cloud", "Cloud"], ["mac", `${Your(state)} Mac`]] as const).map(([v, label]) => (
+          {([["auto", "Auto"], ["cloud", "Cloud"], ["mac", state.shared ? "Owner's computer" : YOUR_COMPUTER]] as const).map(([v, label]) => (
             <button
               key={v}
               onClick={() => void post("/api/bots", { botId: b.id, runsOn: v }, "PATCH")}
@@ -320,7 +321,7 @@ function Details({
             </button>
           ))}
         </div>
-      </div>
+      </div>}
 
       <div className={`flex w-full items-center gap-3 rounded-2xl px-4 py-3 ${glass}`}>
         <div className="flex min-w-0 flex-1 flex-col">

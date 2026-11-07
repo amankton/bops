@@ -1,5 +1,6 @@
 "use client";
 
+import { WINDOWS } from "@/lib/platform";
 import { useEffect, useId, useRef, useState } from "react";
 import { mailRule } from "@/lib/permission";
 import { aiLine, CLOUD_HONOURS_CALL_SETTINGS, headerLine, lineVoiceNote, repliesNote, SETTINGS_SECTIONS, SETTINGS_WORDS as W, spacedPhone, teamLine, type SettingsSection } from "@/lib/bot-settings";
@@ -243,7 +244,7 @@ const Note = ({ children, tone }: { children: React.ReactNode; tone?: "error" })
 
 /** How it works on its computer, in a line (the Computer card's, as ComputerChoice words it). */
 export function computerLine(state: AppState, b: Bot): string {
-  if (!state.shared && state.host === "mac") return `Works on ${yourMac(state)}`;
+  if (!state.shared && state.host === "mac") return WINDOWS ? "Local routines run on this PC" : `Works on ${yourMac(state)}`;
   if (sharesComputer(b)) return b.isMain ? `Works on ${your(state)} free Bops computer` : `Works on ${workBot({ ...b, computer: "shared" }, state.bots).name}'s computer`;
   return b.freeComputer ? "Its own Bops computer" : "Its own cloud computer";
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { SECRET_STORAGE } from "@/lib/platform";
 import { CHANNELS, PAIR_CODE_MS, PAIR_CODE_TRIES, pairCodeLive, workspaceOf, type AppState, type Bot, type ChannelLink } from "@/lib/types";
 import { Spinner } from "./mascot";
 import { BrandTile, post } from "./ui";
@@ -160,7 +161,7 @@ function TokenSetup({ bot: b, kind }: { bot: Bot; kind: "telegram" | "discord" }
         </button>
       </div>
       {error && <span className="text-[12px] leading-4 text-[#B42318]">{error}</span>}
-      <span className="text-[11.5px] leading-4 text-[#9A9A98]">The token stays in your Mac&apos;s Keychain. {b.name} takes requests only from you there.</span>
+      <span className="text-[11.5px] leading-4 text-[#9A9A98]">The token stays in {SECRET_STORAGE}. {b.name} takes requests only from you there.</span>
     </div>
   );
 }

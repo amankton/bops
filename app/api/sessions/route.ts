@@ -3,6 +3,7 @@ import { getState } from "@/lib/server/store";
 import { live, type TaskEffort, type TaskRoute } from "@/lib/types";
 import { notReady } from "@/lib/server/ready";
 import { fromBopsWindow } from "@/lib/server/ui-token";
+import { startPcTask } from "@/lib/server/desktop-agents";
 
 const EFFORTS: TaskEffort[] = ["none", "low", "medium", "high", "xhigh", "max"];
 const SPEEDS = ["default", "fast", "ultrafast"] as const;
@@ -17,19 +18,27 @@ const SPEEDS = ["default", "fast", "ultrafast"] as const;
 export async function POST(request: Request) {
   const unready = notReady();
   if (unready) return unready;
-  const { botId, goal, title, model, effort, speed, agentId } = (await request.json()) as { botId?: string; goal?: string; title?: string; model?: string; effort?: string; speed?: string; agentId?: string };
-  if (!botId || !goal?.trim()) return Response.json({ error: "botId and goal required" }, { status: 400 });
+  const { botId, goal, title, model, effort, speed, agentId, pc } = (await request.json()) as { botId?: string; goal?: string; title?: string; model?: string; effort?: string; speed?: string; agentId?: string; pc?: boolean };
+  if (typeof botId !== "string" || typeof goal !== "string" || !goal.trim() || (title !== undefined && typeof title !== "string")) return Response.json({ error: "botId and goal required" }, { status: 400 });
   if (agentId !== undefined) {
     if (typeof agentId !== "string" || !/^[A-Za-z0-9_]{1,40}$/.test(agentId)) return Response.json({ error: "agentId isn't an agent" }, { status: 400 });
     if (!fromBopsWindow(request)) return Response.json({ error: "A thread's agent can only be picked in the Bops app." }, { status: 403 });
     if (model !== undefined && (typeof model !== "string" || !/^[A-Za-z0-9._:/-]{1,120}$/.test(model))) return Response.json({ error: "model isn't a model name" }, { status: 400 });
-    return Response.json(startSession({ botId, goal: goal.trim(), title, fresh: true, agents: [agentId], model }));
+    try {
+      return Response.json(pc === true ? startPcTask(botId, agentId, goal.trim(), title, model) : startSession({ botId, goal: goal.trim(), title, fresh: true, agents: [agentId], model }));
+    } catch (error) {
+      return Response.json({ error: (error as Error).message }, { status: 409 });
+    }
   }
   if (model !== undefined && (typeof model !== "string" || !/^[\w.-]{1,64}$/.test(model))) return Response.json({ error: "model isn't a model name" }, { status: 400 });
   if (effort !== undefined && !EFFORTS.includes(effort as TaskEffort)) return Response.json({ error: `effort is one of ${EFFORTS.join(", ")}` }, { status: 400 });
   if (speed !== undefined && !(SPEEDS as readonly string[]).includes(speed)) return Response.json({ error: `speed is one of ${SPEEDS.join(", ")}` }, { status: 400 });
   const route: TaskRoute | undefined = model ? { by: "forced", model, effort: (effort as TaskEffort) ?? "medium", ...(speed ? { speed: speed as (typeof SPEEDS)[number] } : {}) } : undefined;
-  return Response.json(startSession({ botId, goal: goal.trim(), title, ...(route ? { route, fresh: true } : {}) }));
+  try {
+    return Response.json(startSession({ botId, goal: goal.trim(), title, ...(route ? { route, fresh: true } : {}) }));
+  } catch (error) {
+    return Response.json({ error: (error as Error).message }, { status: 409 });
+  }
 }
 
 /** Stop one thread, every live thread of a bot, or everything. */

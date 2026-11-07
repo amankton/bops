@@ -495,7 +495,7 @@ export async function startSignIn(brainId: string, botId: string): Promise<{ bot
   const b = bot(botId);
   if (!b) throw new BrainError("No such bot.", 404);
   if (!x.bots.includes(botId)) throw new BrainError(`Let ${b.name} use ${x.name} first.`, 400);
-  if (getState().host === "mac") throw new BrainError("Your bots work in browsers on this Mac (Settings, Where your bots work), so there's no bot computer to sign in on.", 400);
+  if (getState().host === "mac") throw new BrainError(process.platform === "win32" ? "Select Cloud in Settings to sign in on a bot computer, or connect a desktop subscription to work on this PC." : "Your bots work in browsers on this Mac (Settings, Where your bots work), so there's no bot computer to sign in on.", 400);
   const fresh = sameState();
   let c = workComputer(b);
   if (!c.computerId || c.computerStatus !== "ready") {

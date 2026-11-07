@@ -49,8 +49,8 @@ export class AddFileError extends Error {
  * has no computer yet.
  */
 export function filesGoTo(b: Bot, { screen = false } = {}): { computerId: string; host: Bot } | { why: string } {
-  if (getState().host === "mac") return { why: "Your bots work on this Mac here, so there's no computer to put files on. Pictures still work." };
-  if (b.runsOn === "mac" && !screen) return { why: `${b.name} works on your Mac, where added files can't be opened yet. Pictures still work.` };
+  if (getState().host === "mac") return { why: process.platform === "win32" ? "Files can be attached to cloud tasks. Local Podman tasks start with a text goal." : "Your bots work on this Mac here, so there's no computer to put files on. Pictures still work." };
+  if (process.platform !== "win32" && b.runsOn === "mac" && !screen) return { why: `${b.name} works on your Mac, where added files can't be opened yet. Pictures still work.` };
   const host = workComputer(b);
   return host.computerId ? { computerId: host.computerId, host } : { why: `${b.name} has no computer yet.` };
 }

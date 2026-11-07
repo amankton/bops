@@ -46,7 +46,7 @@ const forwards = (g.bopsPreviewForwards ??= new Map<number, Forward>());
 export class ForwardError extends Error {
   code: "MAC_PORT_BUSY";
   constructor(port: number) {
-    super(`Port ${port} on this Mac is in use, so it opens on its screen.`);
+    super(`Port ${port} on this computer is in use, so it opens on its screen.`);
     this.code = "MAC_PORT_BUSY";
   }
 }

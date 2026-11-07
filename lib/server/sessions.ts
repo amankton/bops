@@ -44,6 +44,7 @@ import { textOwner, textResult } from "./phone";
 import { askTiming, needsYou } from "@/lib/asks";
 import { channelResult } from "./channels";
 import { asksForMac, chooseWhere } from "./where";
+import { stopPcTask } from "./desktop-agents";
 import { RUNNER_SCRUB, runnerFailed, runnerSince, runnerUpFor } from "./runner";
 import { addMessage, bot, getState, id, leftBehind, ownerLine, ownerName, ownSession, patchSession, pullState, sameState, session, startLanded, stateDevice, stateEpoch, stateReady, update, watchArrivals } from "./store";
 import { handOffRefused } from "./chart";
@@ -57,7 +58,7 @@ import { watching } from "./presence";
 import { computerOutOfCredit, freeHoursUsed, sayInUse, START_SAY_MS, wakeForUser } from "./free-hours";
 import { brainById, ensureBrainTools, signInStatus } from "./brains";
 import { alsoSpec, brainName, BrainStopped, cliCompact, cliDriver, cliTurn, closeCli, closeTerminal, limitPick, openRun, openShell, openTerminal, signInWords, stoppedWords } from "./cli-agents";
-import { aiOf, hasProfile, isCli, pickAgent, threadAgent, type AgentRun } from "@/lib/agents";
+import { aiOf, hasProfile, isCli, isDesktopAgent, pickAgent, threadAgent, type AgentRun } from "@/lib/agents";
 
 /**
  * Session runner. A session is one long-running task on one screen of the computer its bot works on
@@ -188,7 +189,7 @@ const doing = (s: Session) => live(s) && !stopped.has(s.id);
 /** The bot's thread already doing this job (same title): running, or waiting on the user. Not one another Mac left behind (store.ts leftBehind): nothing works on that one. */
 function sameJob(botId: string, title: string, except?: string) {
   return getState()
-    .sessions.filter((s) => s.botId === botId && s.id !== except && !s.dismissed && !s.replacedBy && (doing(s) || waiting(s)) && !leftBehind(s) && norm(s.title) === norm(title))
+    .sessions.filter((s) => !s.pcTask && s.botId === botId && s.id !== except && !s.dismissed && !s.replacedBy && (doing(s) || waiting(s)) && !leftBehind(s) && norm(s.title) === norm(title))
     .at(-1);
 }
 
@@ -216,7 +217,7 @@ function repoint(from: string, to: string) {
 async function sameJobByMeaning(s: Session) {
   // Its siblings (parts of the same request) are other jobs by design.
   const open = getState()
-    .sessions.filter((x) => x.id !== s.id && x.botId === s.botId && !x.dismissed && !x.replacedBy && (doing(x) || waiting(x)) && !leftBehind(x) && x.createdAt < s.createdAt && !(s.group && x.group?.id === s.group.id) && x.id !== s.partOf && takesApp(x, s.app))
+    .sessions.filter((x) => !x.pcTask && x.id !== s.id && x.botId === s.botId && !x.dismissed && !x.replacedBy && (doing(x) || waiting(x)) && !leftBehind(x) && x.createdAt < s.createdAt && !(s.group && x.group?.id === s.group.id) && x.id !== s.partOf && takesApp(x, s.app))
     .slice(-5);
   if (!open.length) return undefined;
   const brief = (g: string) => (g.length > 240 ? `${g.slice(0, 240)}…` : g);
@@ -256,6 +257,17 @@ function foldInto(s: Session, goal: string, where: "mac" | "cloud" | "auto", opt
 }
 
 export function startSession({ botId, goal, title, chatId, sentVia = "you", viaBot, onWatch, where: asked = "auto", thenOnMac, fresh, outside, member, ownerAsked, movedFrom, routineId, procedure, app, route: forced, group, partOf, secret, agents: picks, model }: StartOptions): Session {
+  const windows = process.platform === "win32";
+  const asksForPc = /\b(?:on|from|using|use) (?:my|your|this) (?:Windows )?PC\b/i.test(goal);
+  if (windows && (asked === "mac" || (!member && asked !== "cloud" && !onWatch && (getState().host === "mac" || (!outside && asksForPc))))) {
+    throw new Error("To run a computer task on this PC, choose Codex or Claude Code in New thread.");
+  }
+  const localBot = bot(botId);
+  if (localBot) {
+    const profile = aiOf(localBot, getState());
+    const selected = (picks ?? []).map((id) => profile.agents.find((x) => x.id === id)).find(Boolean) ?? profile.agents.find((x) => x.id === profile.default);
+    if (selected && isDesktopAgent(selected)) throw new Error("Choose This PC for a Podman task, or choose a cloud agent for a cloud thread.");
+  }
   // Work a bot hands to another goes only down the org chart, to a bot that takes work (lib/chain.ts): the last
   // check, whatever path started it (chat.ts checks first, and says why). A bot splitting its own task passes, and so
   // does a thread carrying on one already handed (moved to the Mac, a part of it).
@@ -296,7 +308,7 @@ export function startSession({ botId, goal, title, chatId, sentVia = "you", viaB
     ...(viaBot && (sentVia === "you" || sentVia === "routine") ? { sentViaBot: true as const } : {}),
     title: title?.trim() || goal.slice(0, 48),
     goal,
-    host: getState().host,
+    host: windows ? "orgo" : getState().host,
     status: "queued",
     steps: [],
     replies: [],
@@ -304,7 +316,7 @@ export function startSession({ botId, goal, title, chatId, sentVia = "you", viaB
     onWatch,
     // A watched screen's thread runs on that screen, in the cloud; everything else is decided first.
     ...(onWatch ? { runsOn: "cloud" as const } : { routing: true }),
-    thenOnMac: (!away && thenOnMac?.trim()) || undefined,
+    thenOnMac: (!windows && !away && thenOnMac?.trim()) || undefined,
     ...(outside ? { fromOutside: true as const } : {}),
     ...(member ? { member } : {}),
     ...(movedFrom ? { movedFrom } : {}),
@@ -480,10 +492,11 @@ async function route(sessionId: string, where: "mac" | "cloud" | "auto", opts: {
 
 /** The user picked where an undecided thread runs. */
 export function setWhere(sessionId: string, to: "mac" | "cloud") {
+  if (process.platform === "win32" && to === "mac") throw new Error("Start a new PC thread with Codex or Claude Code.");
   const s = session(sessionId);
   if (!s?.askWhere) return;
   // It waited on the user, running nowhere: this server runs it now (Session.by).
-  patchSession(sessionId, { askWhere: false, runsOn: to, by: stateDevice() ?? undefined });
+  patchSession(sessionId, { askWhere: false, runsOn: to, by: stateDevice() ?? undefined, ...(process.platform === "win32" ? { host: "orgo" as const } : {}) });
   void pump();
 }
 
@@ -498,6 +511,7 @@ export function setWhere(sessionId: string, to: "mac" | "cloud") {
  * thread was already moved (two moves at once), it goes to that thread.
  */
 export function moveToMac(sessionId: string, also?: string, depth = 0): Session {
+  if (process.platform === "win32") throw new Error("Start a new PC thread with Codex or Claude Code.");
   const s = session(sessionId);
   if (!s) throw new Error("no such thread");
   if (!getState().mac?.ready) throw new Error(getState().mac?.reason ?? "your Mac isn't set up for bots yet");
@@ -685,6 +699,7 @@ export const stoppedByUser = (sessionId: string) => stopped.has(sessionId);
 export function stopSession(sessionId: string, reason = "Stopped by you") {
   const s = session(sessionId);
   if (!s || !live(s)) return;
+  if (s.pcTask) return stopPcTask(s, reason);
   // Stopped for good (not paused for a takeover or its terminal) while the user has its screen: handing the screen back
   // doesn't set it going again (returnControl).
   if (!PAUSED.test(reason) && reason !== IN_TERMINAL && getState().takeover?.sessionId === sessionId)
@@ -2526,7 +2541,7 @@ export function openInTerminal(sessionId: string): { botId: string; display: num
   const r = s.brainRun;
   const kind = threadRunner(s);
   if (!r || !kind || kind === "agent") throw new Error("Only a thread Claude Code, Codex or OpenCode runs opens in a terminal.");
-  if (getState().host === "mac" || s.runsOn === "mac") throw new Error("Your bots work in browsers on this Mac, so there's no terminal to open.");
+  if (getState().host === "mac" || s.runsOn === "mac") throw new Error("The local browser has no terminal to open here.");
   const b = bot(s.botId);
   if (!b) throw new Error("Its bot isn't there anymore.");
   // Its bot still runs that agent, on that account: else its next turn runs on Bops agent, which wouldn't know what was done there.
@@ -2596,7 +2611,7 @@ async function terminalFor(sessionId: string, x: AgentRun, botId: string, comput
 export function openBotTerminal(botId: string): { botId: string; display: number } {
   const b = bot(botId);
   if (!b) throw new Error("No such bot.");
-  if (getState().host === "mac" || b.runsOn === "mac") throw new Error(`${b.name} works on your Mac, so there's no terminal to open.`);
+  if (getState().host === "mac" || b.runsOn === "mac") throw new Error(`${b.name} uses a local desktop, so there’s no terminal to open here.`);
   const ai = aiOf(b, getState());
   const def = ai.agents.find((x) => x.id === ai.default);
   const x = def && isCli(def.kind) ? def : ai.agents.find((y) => isCli(y.kind));

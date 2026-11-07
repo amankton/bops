@@ -33,7 +33,7 @@ mkdirSync(process.env.HOME);
 globalThis.bopsOrgoKey = "sk_orgo_test_bot_ai";
 const work = join(scratch, "work");
 mkdirSync(join(work, ".data"), { recursive: true });
-symlinkSync(join(root, "vm"), join(work, "vm"));
+symlinkSync(join(root, "vm"), join(work, "vm"), process.platform === "win32" ? "junction" : "dir");
 process.chdir(work);
 
 /* ---------------- The saved state, from before profiles ---------------- */
@@ -178,6 +178,7 @@ if (OFF) {
     assert.ok(!/Claude Code|Codex|OpenCode|agy|\+ Add|Open its terminal/.test(section), section);
     assert.match(section, /Chat, threads, memory and calls run on credit\./);
   });
+  process.chdir(root);
   rmSync(scratch, { recursive: true, force: true });
   process.stdout.write(`brains off: ${passed} passed\n`);
   process.exit(0);
@@ -241,6 +242,7 @@ await test("a profile keeps only what Bops can run: Bops agent first, each agent
   assert.deepEqual(ai, {
     agents: [
       { id: "bops", kind: "bops", pays: "credit", model: "gpt-6-astra" },
+      { id: "ag_codex00001", kind: "codex", pays: "plan" },
       { id: "ag_plan000001", kind: "claude", pays: "plan", account: "brain_plan", model: "claude-sonnet-5-5" },
       { id: "ag_badmodel01", kind: "codex", pays: "key", account: "brain_codex" },
       { id: "ag_oc00000001", kind: "opencode", pays: "key", model: "deepinfra/some-model" },
@@ -308,7 +310,7 @@ await test("what isn't in Bops yet answers Soon, with why; a bad model, a sevent
     return "ok";
   };
   assert.match(err({ op: "add", kind: "agy", pays: "key" }), /^400 Soon: agy signs in with a Google account/);
-  assert.match(err({ op: "add", kind: "codex", pays: "plan" }), /^400 Soon: A ChatGPT plan for Codex needs a check of OpenAI's terms first\./);
+  assert.equal(A.paysOk("codex", "plan"), true, "Codex subscriptions use the desktop CLI login");
   assert.match(err({ op: "add", kind: "claude", pays: "credit" }), /^400 Soon: Credit for Claude Code needs Bops Cloud to carry it first\./);
   assert.match(err({ op: "add", kind: "opencode", pays: "key", model: "evil.example/x" }), /^400 OpenCode can't use that model\./);
   assert.match(err({ op: "add", kind: "bops", pays: "credit" }), /^400 Bops agent is always there/);
@@ -521,11 +523,11 @@ await test("the AI section: its agents as tiles with the Default marked, agy Soo
   plain(out, "the AI section");
   // A tile's editor: model, how it pays (Soon ones say why), its account, Make default and Remove.
   const ed = render(h(BotAiSection, { state: S.getState(), bot: bot("boppy"), editing: codexAgent, onShowScreen() {} }));
-  assert.match(ed, /Model GPT 6\.1 Sol GPT 6 Astra ▾ Pays with Credit ChatGPT plan Your key Account Codex Max plan|Model GPT 6\.1 Sol GPT 6 Astra ▾ Pays with Credit ChatGPT plan Your key/);
-  assert.match(renderToStaticMarkup(h(BotAiSection, { state: S.getState(), bot: bot("boppy"), editing: codexAgent })), /title="Soon: A ChatGPT plan for Codex needs a check of OpenAI&#x27;s terms first\."/);
+  assert.match(ed, /Model GPT 6\.1 Sol GPT 6 Astra ▾ Pays with Credit ChatGPT subscription Your key/);
+  assert.doesNotMatch(renderToStaticMarkup(h(BotAiSection, { state: S.getState(), bot: bot("boppy"), editing: codexAgent })), /ChatGPT plan for Codex needs a check/);
   assert.match(ed, /Your OpenAI key Make default Remove/);
   // What's Soon says why, in words on the page, not only on hover.
-  assert.match(ed, /Soon: Credit for Codex needs Bops Cloud to carry it first\. A ChatGPT plan for Codex needs a check of OpenAI's terms first\./);
+  assert.match(ed, /Soon: Credit for Codex needs Bops Cloud to carry it first\./);
   plain(ed, "the editor");
   // No key for it in the Vault (when the window has read the Vault's names): not ready, with Add key.
   const noKey = render(h(BotAiSection, { state: S.getState(), bot: bot("boppy"), editing: codexAgent, onAddKey() {} }));
@@ -593,6 +595,26 @@ await test("New thread, in place (never a dialog over the window), and the agent
   for (const w of [...Object.values(A.AGENTS).map((x) => x.soon ?? ""), ...Object.values(A.PAYS_SOON).flatMap((x) => Object.values(x))]) plain(w, "a Soon reason");
 });
 
+await test("the chat composer uses desktop subscription readiness and Hermes access", () => {
+  const codex = { id: "ag_localCodex", kind: "codex", pays: "plan" };
+  const claude = { id: "ag_localClaud", kind: "claude", pays: "local" };
+  const hermes = { id: "ag_localHerme", kind: "hermes", pays: "local" };
+  const b = { ...bot("boppy"), ai: { agents: [A.BOPS_AGENT, codex, claude, hermes], default: codex.id } };
+  const state = { ...S.getState(), bots: [b], desktopAgents: true, host: "mac" };
+  const installed = { installed: true, fullAccess: false, running: false };
+  const desktop = { [codex.id]: { ...installed, signedIn: true }, [claude.id]: { ...installed, signedIn: true }, [hermes.id]: installed };
+  const props = { state, bot: b, value: null, defaultOpen: true, onPick() {} };
+  assert.match(text(renderToStaticMarkup(h(AgentChipPick, props))), /^Codex · checking…/);
+  assert.equal(text(renderToStaticMarkup(h(AgentChipPick, { ...props, desktop }))), "Codex ▾ Bops agent Codex Default Claude Code Hermes · access off");
+  const signedOut = { ...desktop, [claude.id]: { ...installed, signedIn: false } };
+  const box = boxAgents(state, b, claude.id, undefined, signedOut);
+  assert.equal(box.now.id, claude.id, "a changed sign-in cannot silently switch an explicit pick");
+  assert.equal(box.unavailable(box.now).label, "not signed in");
+  const granted = boxAgents(state, b, hermes.id, undefined, { ...desktop, [hermes.id]: { ...installed, fullAccess: true } });
+  assert.equal(granted.unavailable(granted.now), undefined);
+  assert.deepEqual(A.readyAgents(b, state).map((x) => x.id), ["bops"], "desktop agents stay out of task and thread routing");
+});
+
 await test("a bot that leaves a computer (deleted, or moved to its own) has its folder there cleared; a bot on the default has none", async () => {
   commands.length = 0;
   BA.leaveComputer(bot("boppy"), "pc-old");
@@ -617,6 +639,7 @@ await test("a build without brains (a release): the --off pass", async () => {
   assert.match(out, /brains off: 1 passed/, out);
 });
 
+process.chdir(root);
 rmSync(scratch, { recursive: true, force: true });
 assert.ok(!logged.some((l) => /bopsrun_[0-9a-f]{16}|sk-ant-|sk-proj-/.test(l)), "nothing secret in what Bops logged");
 process.stdout.write(`bot ai: ${passed} passed\n`);

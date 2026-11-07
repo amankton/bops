@@ -53,7 +53,7 @@ export function UpdateButton({ onOpen }: { onOpen: () => void }) {
       : phase === "downloading"
         ? `Bops ${info.version} is downloading`
         : phase === "available" && info.failed && info.why === "space"
-          ? "Not enough space on this Mac to update"
+          ? "Not enough space on this computer to update"
           : phase === "available" && info.failed
             ? "The download didn't finish"
           : `Bops ${info.version} is out`;
@@ -112,7 +112,7 @@ export function UpdateCard({ info, late, onDismiss }: { info: UpdateInfo; late: 
             <span className="font-medium text-ink">Bops {info.version} is downloading.</span>
           ) : phase === "available" && info.failed && info.why === "space" ? (
             <>
-              <span className="font-medium text-ink">Not enough space on this Mac to update.</span> Bops needs about 2 GB free.
+              <span className="font-medium text-ink">Not enough space on this computer to update.</span> Bops needs about 2 GB free.
             </>
           ) : phase === "available" && info.failed ? (
             <span className="font-medium text-ink">The download didn&apos;t finish.</span>

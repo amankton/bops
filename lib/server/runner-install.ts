@@ -92,8 +92,8 @@ const OWNER_ONLY = "only the workspace's owner can set a runner up there";
 const GONE_THERE = "it stopped on its computer";
 /** Why its threads ended, in each case. */
 const STOPPED = {
-  mac: "Stopped: routines run on your Mac now.",
-  host: "Stopped: your bots work in browsers on your Mac now.",
+  mac: "Stopped: routines run in the desktop app now.",
+  host: "Stopped: local scheduling is active.",
   gone: "Stopped: its computer was deleted.",
   moved: "Stopped: no bot works on this computer anymore.",
   full: `Stopped: ${FULL_ACCESS}.`,
@@ -537,6 +537,7 @@ async function look() {
   } catch (e) {
     console.warn(`[runner-install] apps scope: ${(e as Error).message}`);
   }
+  if (getState().desktopRoutineDevice || (process.platform === "win32" && getState().host === "mac")) return;
   const host = getState().host === "mac";
   const cloud = mode === "cloud" && !runsOnMissing() && !host;
   const wanted = cloud ? await wantedComputers(key) : new Map<string, Wanted>();
@@ -725,7 +726,7 @@ async function install(id: string, bundle: Bundle, key: string, me: string, shar
   let touched = false;
   const fail = (error: string) => (upgrade && !touched ? keptAsIs(id, error) : failed(id, error, bundle, me));
   // A runner reaches what this Mac does: an Orgo or a Bops Cloud on this Mac it never could.
-  if (!ORIGIN.test(orgoAt) || !ORIGIN.test(cloudAt) || LOOPBACK_URL.test(orgoAt) || LOOPBACK_URL.test(cloudAt)) return fail("Orgo or Bops Cloud runs on this Mac, which the computer can't reach");
+  if (!ORIGIN.test(orgoAt) || !ORIGIN.test(cloudAt) || LOOPBACK_URL.test(orgoAt) || LOOPBACK_URL.test(cloudAt)) return fail("Orgo or Bops Cloud runs on this computer, which the bot can't reach");
   if (upgrade) mark(id, { ...before, upgrading: { version: bundle.version, buildId: bundle.buildId, by: me, at: Date.now() } });
   else mark(id, { status: "installing", version: bundle.version, buildId: bundle.buildId, by: me, at: Date.now(), ...keyOf(before) });
   const dirName = `${bundle.version}-${bundle.buildId}`;

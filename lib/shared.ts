@@ -1,4 +1,5 @@
 import type { MemberAppAct, SharedApps, SharedGroup } from "@/cloud/protocol";
+import { WINDOWS } from "@/lib/platform";
 /**
  * Workspaces shared with the user (cloud/members.ts, lib/server/shared.ts): someone added them to one of
  * their Bops workspaces' Orgo projects, and they watch it here. With Write on a bot (the owner's choice,
@@ -169,7 +170,7 @@ export const your = (state: Viewing) => (state.shared ? "the owner's" : "your");
 /** "Your", at the start of a line. */
 export const Your = (state: Viewing) => (state.shared ? "The owner's" : "Your");
 /** "your Mac" to the owner, "the owner's Mac" in a shared workspace. */
-export const yourMac = (state: Viewing) => `${your(state)} Mac`;
+export const yourMac = (state: Viewing) => `${your(state)} ${WINDOWS ? (state.shared ? "computer" : "PC") : "Mac"}`;
 /**
  * Whether the user may change something that needs `power` (cloud/member-access.ts Power) in the workspace open: always in their own;
  * in one shared with them, when it's theirs there (an Admin has every one, a Member the ones turned on for them in Team)
@@ -246,7 +247,7 @@ export const OWNER_PHONE_LINE = "Only the owner can approve this on their phone.
 /** A payment at the screen: it spends the owner's money. */
 export const OWNER_PAY_LINE = "Only the owner can pay.";
 /** A thread on the owner's Mac (threadOwnersOnly). */
-export const ON_MAC_LINE = "This runs on the owner's Mac. Only the owner can tell it more.";
+export const ON_MAC_LINE = `This runs on the owner's ${WINDOWS ? "computer" : "Mac"}. Only the owner can tell it more.`;
 /** Work on a bot's computer, for someone the owner hasn't let use it (Use its computer). */
 export const NO_COMPUTER_LINE = "This runs on the bot's computer, and the owner hasn't let you use it.";
 /** What only an Admin does (cloud/protocol.ts ADMIN_ONLY). */
@@ -259,9 +260,9 @@ export const KEYS_GIVEN_LINE = "The owner or an Admin can give you Keys.";
  * Under an answer on its way while the owner's Bops is shut: it goes when it opens (as long as the ask waits). Said of the
  * workspace's Mac, never "the owner": the person reading can't act on them (nor on the lines below).
  */
-export const ANSWER_WAITS_LINE = "The workspace's Mac is closed. Your answer goes when it opens.";
+export const ANSWER_WAITS_LINE = `The workspace's ${WINDOWS ? "desktop app" : "Mac"} is closed. Your answer goes when it opens.`;
 /** Under anything else on its way while it's shut (a message, a reply, How I work, an app's act): those wait only a while (cloud/protocol.ts MEMBER_ACT_MS), then say they didn't go. */
-export const REPLY_WAITS_LINE = "Waiting for the workspace's Mac to open.";
+export const REPLY_WAITS_LINE = `Waiting for the workspace's ${WINDOWS ? "desktop app" : "Mac"} to open.`;
 /** The owner's app work (a thread on an app), for someone without Your Apps at Write (cloud/members.ts APP_WORK). */
 export const APP_WORK_LINE = "This is app work. Ask the owner for Write on Your Apps to answer it.";
 
@@ -409,8 +410,8 @@ function bopsVoice(text: string): string {
  */
 export function ownerCall(text: string): string {
   return text
-    .replace(/^While your Mac was away, you called\b/, "While their Mac was away, the owner called")
-    .replace(/^While your Mac was away,/, "While the owner's Mac was away,")
+    .replace(/^While your (?:Mac was away|computer was offline), you called\b/, WINDOWS ? "While their computer was offline, the owner called" : "While their Mac was away, the owner called")
+    .replace(/^While your (?:Mac was away|computer was offline),/, WINDOWS ? "While the owner's computer was offline," : "While the owner's Mac was away,")
     .replace(/^You: /gm, "Owner: ");
 }
 

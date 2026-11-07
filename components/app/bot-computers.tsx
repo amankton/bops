@@ -1,5 +1,6 @@
 "use client";
 
+import { WINDOWS } from "@/lib/platform";
 import { useEffect, useRef, useState } from "react";
 import { runnerNeedsKey, workBot, type AppState, type Bot, type ComputerOrgoKey, type RunnerState } from "@/lib/types";
 import { Your, yourMac } from "@/lib/shared";
@@ -19,7 +20,7 @@ const onThisMac = (state: AppState) => !state.shared && state.host === "mac";
 /** A bot's computer, in plain words. A bot that shares says whose computer it works on. */
 const computerNow = (state: AppState, b: Bot) => {
   const c = workBot(b, state.bots);
-  if (onThisMac(state)) return "Uses this Mac";
+  if (onThisMac(state)) return WINDOWS ? "Local routines run on this PC" : "Uses this Mac";
   // A shared workspace's bot set to its owner's Mac works there, as its Details say (computer.tsx ComputerSummary).
   if (state.shared && b.runsOn === "mac") return `Works on ${yourMac(state)}`;
   if (c.id !== b.id) return `Works on ${c.name}'s computer`;

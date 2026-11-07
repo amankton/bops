@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 /** A live picture of the window a bot is using on the user's Mac (?app=Calculator), for the previews. */
 export async function GET(request: Request) {
+  if (process.platform === "win32") return new Response("Open Your PC to view a display or window.", { status: 409 });
   const url = new URL(request.url);
   if (!["localhost", "127.0.0.1", "::1"].includes(url.hostname)) return new Response("local only", { status: 403 });
   const params = url.searchParams;

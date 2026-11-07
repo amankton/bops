@@ -9,9 +9,10 @@ import { forgetLogin } from "./logins";
 import { trackServerEvent } from "./analytics";
 import { appHeaders } from "./app-version";
 import { cloudOn, cloudProxy, cloudSession, cloudSessionNow, cloudUrl } from "./cloud";
+import { desktopComposioKey, desktopComposioScope, loadDesktopComposio } from "./composio-desktop";
 import { lowRisk, movesMoney } from "./judgment";
 import { allows, declined, heldAsk, NeedsOk, type AskSpec } from "./permission";
-import { addMessage, bot, getState, installId, ownerName, session as threadOf, update } from "./store";
+import { addMessage, bot, getState, installId, ownerName, sameState, session as threadOf, update } from "./store";
 import { DATA_TOOL_NAMES, dataOn, foundByBots, runDataTool } from "./treg";
 
 /**
@@ -29,13 +30,35 @@ import { DATA_TOOL_NAMES, dataOn, foundByBots, runDataTool } from "./treg";
  * COMPOSIO_USER_ID, else one id per install (so installs sharing a Composio project stay apart).
  */
 function userId() {
+  if (desktopComposioKey()) return desktopComposioScope()!;
   if (!cloudOn()) return process.env.COMPOSIO_USER_ID || `bops-${installId()}`;
   const mine = cloudSessionNow()?.composio?.userId;
   if (!mine) throw new Error("Connected apps aren't available right now.");
   return mine;
 }
 
-export const composioOn = () => (cloudOn() ? !!cloudSessionNow()?.composio : !!process.env.COMPOSIO_API_KEY);
+const viaCloud = () => cloudOn() && !desktopComposioKey();
+const localScope = () => desktopComposioKey() ? desktopComposioScope() : undefined;
+export const composioOn = () => !!desktopComposioKey() || (cloudOn() ? !!cloudSessionNow()?.composio : !!process.env.COMPOSIO_API_KEY);
+const accountHere = (a: Pick<AppAccount, "id" | "composioDevice">) => a.id.startsWith("open:") || a.composioDevice === localScope();
+
+export async function appConnectionStatus() {
+  await loadDesktopComposio();
+  const scope = desktopComposioScope();
+  if (viaCloud()) {
+    try {
+      await cloudSession();
+    } catch (e) {
+      if (!scope) throw e;
+      return { available: false, canSetUp: true, onThisPC: false };
+    }
+  }
+  return {
+    available: composioOn(),
+    canSetUp: !!scope && (!!desktopComposioKey() || !composioOn()),
+    onThisPC: !!desktopComposioKey(),
+  };
+}
 
 /**
  * Bops' public address: the "connected" page after an app's sign-in, OAuth callbacks, and the bots'
@@ -57,8 +80,8 @@ type Live = {
   /** Clients that tell Bops Cloud which bot and app a run is for (cxFor), by key, bot and app. */
   tagged?: Map<string, Composio>;
   tools: Map<string, ToolInfo>;
-  catalog?: { at: number; v: number; via: Via; apps: CatalogApp[] };
-  loadingCatalog?: { via: Via; apps: Promise<CatalogApp[]> };
+  catalog?: { at: number; v: number; key: string; apps: CatalogApp[] };
+  loadingCatalog?: { key: string; apps: Promise<CatalogApp[]> };
 };
 const g = globalThis as unknown as { bopsComposio2?: Live };
 const live: Live = (g.bopsComposio2 ??= { sessions: new Map(), tools: new Map() });
@@ -69,15 +92,20 @@ const live: Live = (g.bopsComposio2 ??= { sessions: new Map(), tools: new Map() 
  * usage reports stay off, since this Mac reaches Composio only through the cloud. No client asks npm
  * for a newer SDK (each new one did, and logged "Upgrade available").
  */
+const proxy = () => viaCloud() ? cloudProxy("composio") : null;
+const directKey = () => desktopComposioKey() ?? process.env.COMPOSIO_API_KEY;
+const providerKey = () => JSON.stringify([proxy()?.key ?? "", directKey() ?? "", localScope()]);
+
 function cx() {
-  const via = cloudProxy("composio");
-  const key = via ? via.key : (process.env.COMPOSIO_API_KEY ?? "");
+  const via = proxy();
+  const key = providerKey();
   if (live.client && live.clientKey === key) return live.client;
   live.sessions.clear();
   live.tagged?.clear();
+  live.tools.clear();
   live.client = via
     ? new Composio({ apiKey: via.key, baseURL: via.url, defaultHeaders: { Authorization: `Bearer ${via.key}`, ...appHeaders() }, allowTracking: false, disableVersionCheck: true })
-    : new Composio({ apiKey: process.env.COMPOSIO_API_KEY, disableVersionCheck: true });
+    : new Composio({ apiKey: directKey(), allowTracking: false, disableVersionCheck: true });
   live.clientKey = key;
   return live.client;
 }
@@ -88,7 +116,7 @@ function cx() {
  * it makes is that bot's; directly, the shared client.
  */
 function cxFor(botId?: string, app?: string) {
-  const via = cloudProxy("composio");
+  const via = proxy();
   if (!via || (!botId && !app)) return cx();
   const k = `${via.key}\n${botId ?? ""}\n${app ?? ""}`;
   live.tagged ??= new Map();
@@ -130,8 +158,8 @@ const ownKeyScheme = (scheme: string) => scheme !== "NO_AUTH" && scheme !== "SAM
  * Every toolkit Composio has, most used first. A page holds at most 1000 and Composio has more, so
  * it's read page by page (the SDK's toolkits.get stops at the first page and drops its cursor).
  */
-async function everyToolkit() {
-  const page = (cursor?: string) => cx().getClient().toolkits.list({ sort_by: "usage", limit: 1000, ...(cursor ? { cursor } : {}) });
+async function everyToolkit(client: Composio) {
+  const page = (cursor?: string) => client.getClient().toolkits.list({ sort_by: "usage", limit: 1000, ...(cursor ? { cursor } : {}) });
   const all: Awaited<ReturnType<typeof page>>["items"] = [];
   let cursor: string | undefined;
   for (let n = 0; n < 10; n++) {
@@ -166,14 +194,16 @@ async function cloudSetups() {
  * person types their own key. The rest would only be turned away at the cloud, so they aren't offered.
  */
 export async function catalog(): Promise<CatalogApp[]> {
-  if (cloudOn()) await cloudSession().catch(() => null);
+  await loadDesktopComposio();
+  if (viaCloud()) await cloudSession().catch(() => null);
   if (!composioOn()) return [];
-  const via: Via = cloudOn() ? "cloud" : "direct";
-  const have = live.catalog?.v === CATALOG_V && live.catalog.via === via ? live.catalog : undefined;
+  const via: Via = viaCloud() ? "cloud" : "direct";
+  const key = providerKey();
+  const have = live.catalog?.v === CATALOG_V && live.catalog.key === key ? live.catalog : undefined;
   if (have && Date.now() - have.at < 12 * 3600_000) return have.apps;
-  if (live.loadingCatalog?.via !== via) {
+  if (live.loadingCatalog?.key !== key) {
     const apps = (async () => {
-      const [all, setups] = await Promise.all([everyToolkit(), via === "cloud" ? cloudSetups() : null]);
+      const [all, setups] = await Promise.all([everyToolkit(cx()), via === "cloud" || localScope() ? cloudSetups() : null]);
       const out: CatalogApp[] = [];
       // Usage can reorder the list between pages: an app seen on an earlier page is listed once.
       const seen = new Set<string>();
@@ -189,10 +219,10 @@ export async function catalog(): Promise<CatalogApp[]> {
         }
         out.push({ app: t.slug, name: t.name, about: short(t.meta.description), tags: (t.meta.categories ?? []).slice(0, 2).map((c) => c.name), auth, tools: t.meta.tools_count });
       }
-      if (cloudOn() === (via === "cloud")) live.catalog = { at: Date.now(), v: CATALOG_V, via, apps: out };
+      if (providerKey() === key) live.catalog = { at: Date.now(), v: CATALOG_V, key, apps: out };
       return out;
     })();
-    live.loadingCatalog = { via, apps };
+    live.loadingCatalog = { key, apps };
     void apps
       .finally(() => {
         if (live.loadingCatalog?.apps === apps) live.loadingCatalog = undefined;
@@ -220,7 +250,7 @@ async function authConfigFor(app: string) {
   const tk = await cx().toolkits.get(app);
   if (tk.composioManagedAuthSchemes?.length) return (await cx().authConfigs.create(app, { type: "use_composio_managed_auth", name: `${tk.name} (Bops)` })).id;
   // Through Bops Cloud, a setup of our own can only ask each person for their own key (see ownKeyScheme).
-  const mode = cloudOn() ? tk.authConfigDetails?.find((d) => ownKeyScheme(d.mode))?.mode : tk.authConfigDetails?.[0]?.mode;
+  const mode = viaCloud() || localScope() ? tk.authConfigDetails?.find((d) => ownKeyScheme(d.mode))?.mode : tk.authConfigDetails?.[0]?.mode;
   if (!mode) throw new Error(`${tk.name} can't be connected from Bops yet`);
   return (await cx().authConfigs.create(app, { type: "use_custom_auth", authScheme: mode as never, name: `${tk.name} (Bops)`, credentials: {} })).id;
 }
@@ -231,7 +261,11 @@ async function authConfigFor(app: string) {
  * the same app is fine. `replaces` signs an expired account back in: the bots keep their access.
  */
 export async function connectApp(app: string, label?: string, replaces?: string, picked?: AppConnecting["grant"]) {
-  if (!composioOn()) throw new Error(cloudOn() ? "Connected apps aren't available right now." : "Add COMPOSIO_API_KEY to .env.local first");
+  const status = await appConnectionStatus();
+  if (!status.available) throw new Error(status.canSetUp ? "Set up Composio in Logins first." : "Connected apps aren't configured.");
+  const ours = sameState();
+  const key = providerKey();
+  const device = localScope();
   // Connected in the workspace open now (ui.tsx currentWorkspace): its bots have it by default, and the
   // bots were picked from its team, so its other bots get no access.
   const state = getState();
@@ -239,6 +273,11 @@ export async function connectApp(app: string, label?: string, replaces?: string,
   const grant = picked && { ...picked, workspaceId: ws };
   const info = (await catalog()).find((a) => a.app === app);
   const appName = info?.name ?? (await appNameOf(app));
+  const current = () => ours() && providerKey() === key;
+  if (!current()) throw new Error("The Composio connection changed. Try again.");
+  if (replaces && !state.accounts?.some((a) => a.id === replaces && a.app === app && accountHere(a))) {
+    throw new Error("That account uses a different Composio connection.");
+  }
   const who = getState().account?.user.id;
   if (info?.auth === "open") {
     const accountId = `open:${app}`;
@@ -253,31 +292,57 @@ export async function connectApp(app: string, label?: string, replaces?: string,
     if (isNew) await offerStartersFor(app, grant?.bots);
     return { accountId };
   }
-  // Afterwards the browser lands on Bops' own "connected" page, not Composio's (Bops Cloud's, signed in with Orgo).
-  if (cloudOn()) await cloudSession();
-  const callbackUrl = `${publicUrl()}/connected?app=${encodeURIComponent(appName)}`;
-  const req = await cx().connectedAccounts.link(userId(), await authConfigFor(app), { allowMultiple: true, callbackUrl });
+  const client = cx();
+  const user = userId();
+  const authConfig = await authConfigFor(app);
+  if (!current()) throw new Error("The Composio connection changed. Try again.");
+  // A PC's project uses Composio's hosted completion page. Cloud and self-hosted deployments keep their own page.
+  const callbackUrl = device ? undefined : `${publicUrl()}/connected?app=${encodeURIComponent(appName)}`;
+  const req = await client.connectedAccounts.link(user, authConfig, { allowMultiple: true, callbackUrl });
   const waitId = req.id;
+  if (!current()) {
+    void client.connectedAccounts.delete(waitId).catch(() => null);
+    throw new Error("The Composio connection changed. Try again.");
+  }
   update((s) => {
-    s.connecting = (s.connecting ?? []).filter((c) => !(c.app === app && c.status === "failed"));
-    s.connecting.push({ id: waitId, app, appName, label: label?.trim() || undefined, status: "waiting", at: Date.now(), replaces, grant });
+    s.connecting = (s.connecting ?? []).filter((c) => !(c.app === app && c.composioDevice === device && c.status === "failed"));
+    s.connecting.push({ id: waitId, app, appName, label: label?.trim() || undefined, status: "waiting", at: Date.now(), replaces, grant, ...(device ? { composioDevice: device } : {}) });
   });
-  if (req.redirectUrl) execFile("open", [req.redirectUrl]);
+  const fail = (error: string) => {
+    if (!ours()) return;
+    update((s) => {
+      const c = s.connecting?.find((x) => x.id === waitId && x.status === "waiting");
+      if (c) Object.assign(c, { status: "failed", error });
+    });
+  };
+  if (req.redirectUrl && (device ? /^https:\/\//i : /^https?:\/\//i).test(req.redirectUrl)) {
+    const win = process.platform === "win32";
+    execFile(win ? "rundll32.exe" : process.platform === "darwin" ? "open" : "xdg-open", win ? ["url.dll,FileProtocolHandler", req.redirectUrl] : [req.redirectUrl],
+      { windowsHide: true }, (error) => { if (error) fail("Couldn't open your browser. Try again."); });
+  } else if (req.redirectUrl) {
+    fail("Composio returned an invalid sign-in link.");
+    void client.connectedAccounts.delete(waitId).catch(() => null);
+    return {};
+  }
   void req
     .waitForConnection(15 * 60_000)
     .then(async (ca: { id: string }) => {
+      if (!current()) return fail("The Composio connection changed. Try again.");
       let suggestAfter: string[] | undefined;
       let checkWith: AppConnecting["grant"];
+      let added = false;
       const name = await accountName(ca.id).catch(() => undefined);
+      if (!current()) return fail("The Composio connection changed. Try again.");
       const old = replaces ? getState().accounts?.find((a) => a.id === replaces) : undefined;
-      const isNew = !getState().accounts?.some((a) => a.id === ca.id);
       update((s) => {
-        const c = s.connecting?.find((x) => x.id === waitId);
+        const c = s.connecting?.find((x) => x.id === waitId && x.status === "waiting");
+        if (!c) return;
         s.connecting = (s.connecting ?? []).filter((x) => x.id !== waitId);
         if (s.accounts?.some((a) => a.id === ca.id)) return;
         // Signed back in: the old one's workspace, so its bots keep the default (one from before stays only its bots').
         const workspaceId = old ? old.workspaceId : ws;
-        (s.accounts ??= []).push({ id: ca.id, app, appName, name, label: c?.label ?? old?.label, status: "active", at: Date.now(), ...(workspaceId ? { workspaceId } : {}), ...(old?.onlyGiven ? { onlyGiven: true } : {}) });
+        (s.accounts ??= []).push({ id: ca.id, app, appName, name, label: c.label ?? old?.label, status: "active", at: Date.now(), ...(workspaceId ? { workspaceId } : {}), ...(old?.onlyGiven ? { onlyGiven: true } : {}), ...(device ? { composioDevice: device } : {}) });
+        added = true;
         give(s, ca.id, c?.grant);
         // A new account: its bot is offered the app's starter routines, and its check is made when How often
         // was picked (signing back in isn't new). Only now: a sign-in that fails or is given up makes neither.
@@ -292,17 +357,13 @@ export async function connectApp(app: string, label?: string, replaces?: string,
           dropAccount(s, old.id);
         }
       });
-      if (isNew) trackServerEvent("bops_app_connected", { toolkit: app, reconnect: !!old }, { userId: who });
+      if (!added) return;
+      trackServerEvent("bops_app_connected", { toolkit: app, reconnect: !!old }, { userId: who });
       if (checkWith) await checkFor(ca.id, checkWith);
       if (suggestAfter) await offerStartersFor(app, suggestAfter);
-      if (old) await cx().connectedAccounts.delete(old.id).catch(() => null);
+      if (old && old.id !== ca.id && current()) await client.connectedAccounts.delete(old.id).catch(() => null);
     })
-    .catch((e: Error) =>
-      update((s) => {
-        const c = s.connecting?.find((x) => x.id === waitId);
-        if (c) Object.assign(c, { status: "failed", error: /timed out/i.test(e.message) ? "The sign-in wasn't finished." : e.message.slice(0, 200) });
-      }),
-    );
+    .catch((e: Error) => fail(/timed out/i.test(e.message) ? "The sign-in wasn't finished." : "Composio couldn't finish the sign-in. Try again."));
   return { redirectUrl: req.redirectUrl };
 }
 
@@ -327,8 +388,10 @@ const checkFor = async (accountId: string, grant?: AppConnecting["grant"]) => {
 
 /** Stop waiting on a sign-in (or clear one that failed). */
 export function cancelConnect(waitId: string) {
+  const connection = getState().connecting?.find((c) => c.id === waitId);
+  if (!connection || !accountHere(connection)) return;
   update((s) => void (s.connecting = (s.connecting ?? []).filter((c) => c.id !== waitId)));
-  void cx().connectedAccounts.delete(waitId).catch(() => null);
+  if (composioOn()) void cx().connectedAccounts.delete(waitId).catch(() => null);
 }
 
 /**
@@ -360,7 +423,20 @@ function dropAccount(s: ReturnType<typeof getState>, accountId: string) {
 
 /** Disconnect an account: Composio forgets its tokens, no bot can use it any more, and its checks stop. */
 export async function disconnectAccount(accountId: string) {
-  if (!accountId.startsWith("open:")) await cx().connectedAccounts.delete(accountId).catch(() => null);
+  await loadDesktopComposio();
+  const account = getState().accounts?.find((a) => a.id === accountId);
+  if (!account) return;
+  if (!accountHere(account)) throw new Error("That account uses a different Composio connection.");
+  const ours = sameState();
+  if (!accountId.startsWith("open:")) {
+    if (!composioOn()) throw new Error("Composio isn't available right now.");
+    try {
+      await cx().connectedAccounts.delete(accountId);
+    } catch (e) {
+      if ((e as { status?: number }).status !== 404) throw new Error("Couldn't disconnect this account in Composio. Try again.");
+    }
+  }
+  if (!ours()) return;
   update((s) => dropAccount(s, accountId));
   await import("./routine-suggestions").then((m) => m.dropChecks(accountId)).catch((e: Error) => console.warn(`[apps] checks of ${accountId}: ${e.message}`));
 }
@@ -412,40 +488,59 @@ async function whoIs(accountId: string, app: string) {
 
 /** Bring Bops in line with Composio: accounts connected, signed out or removed elsewhere (the Composio dashboard, another device). */
 export async function syncApps() {
-  if (!composioOn()) return;
+  if (!(await appConnectionStatus()).available) return;
+  const ours = sameState();
+  const key = providerKey();
+  const device = localScope();
+  const current = () => ours() && providerKey() === key;
+  const client = cx();
+  const user = userId();
   const found = new Map<string, { app: string; status: "active" | "expired" }>();
   let cursor: string | undefined;
   do {
-    const page = (await cx().connectedAccounts.list({ userIds: [userId()], limit: 100, ...(cursor ? { cursor } : {}) } as never)) as unknown as {
+    const page = (await client.connectedAccounts.list({ userIds: [user], limit: 100, ...(cursor ? { cursor } : {}) } as never)) as unknown as {
       items: { id: string; status: string; toolkit?: { slug: string } }[];
       nextCursor?: string | null;
     };
     for (const a of page.items) if (a.toolkit?.slug && (a.status === "ACTIVE" || a.status === "EXPIRED")) found.set(a.id, { app: a.toolkit.slug, status: a.status === "ACTIVE" ? "active" : "expired" });
     cursor = page.nextCursor ?? undefined;
-  } while (cursor);
+  } while (cursor && current());
+  if (!current()) return;
   const known = new Map((getState().accounts ?? []).map((a) => [a.id, a]));
   const added: AppAccount[] = [];
   for (const [accountId, x] of found) {
     // Only working accounts come in: an old signed-out one is clutter (signing in again makes a new one).
     if (known.has(accountId) || x.status !== "active") continue;
     // Being connected right now: the sign-in finishing adds it, with its label.
-    if (getState().connecting?.some((c) => c.app === x.app && c.status === "waiting")) continue;
+    if (!current()) return;
+    if (getState().connecting?.some((c) => c.app === x.app && c.composioDevice === device && c.status === "waiting")) continue;
     // Connected where this Mac didn't see who was picked for it (a Mac still on an older Bops, which Bops
     // Cloud keeps out of your state until it's updated): only the bots you give it, never every bot.
-    added.push({ id: accountId, app: x.app, appName: await appNameOf(x.app), name: await accountName(accountId).catch(() => undefined), status: x.status, at: Date.now(), workspaceId: MAIN_WORKSPACE, onlyGiven: true });
+    const appName = await appNameOf(x.app);
+    if (!current()) return;
+    added.push({ id: accountId, app: x.app, appName, name: await accountName(accountId).catch(() => undefined), status: x.status, at: Date.now(), workspaceId: MAIN_WORKSPACE, onlyGiven: true, ...(device ? { composioDevice: device } : {}) });
   }
   // Accounts whose name wasn't known when they came in.
   const named = new Map<string, string>();
   for (const a of getState().accounts ?? []) if (!a.name && found.get(a.id)?.status === "active") {
+    if (!current()) return;
     const n = await accountName(a.id).catch(() => undefined);
     if (n) named.set(a.id, n);
   }
+  if (!current()) return;
   update((s) => {
-    for (const a of s.accounts ?? []) if (found.has(a.id)) a.status = found.get(a.id)!.status;
-    for (const a of s.accounts ?? []) if (named.has(a.id)) a.name = named.get(a.id);
-    // Gone from Composio, or signed out with no bot using it (nothing to sign back in for): off the list.
-    for (const a of [...(s.accounts ?? [])])
-      if (!a.id.startsWith("open:") && (!found.has(a.id) || (a.status === "expired" && !a.label && !s.bots.some((b) => levelIn(s, b, a))))) dropAccount(s, a.id);
+    for (const a of [...(s.accounts ?? [])]) {
+      if (a.id.startsWith("open:") || a.composioDevice !== device) continue;
+      const entry = found.get(a.id);
+      if (device) {
+        // A replacement project key can point to a new project. Retain the PC's grants for sign-in again.
+        a.status = entry?.status ?? "expired";
+      } else if (!entry || (entry.status === "expired" && !a.label && !s.bots.some((b) => levelIn(s, b, a)))) {
+        dropAccount(s, a.id);
+        continue;
+      } else a.status = entry.status;
+      if (named.has(a.id)) a.name = named.get(a.id);
+    }
     // Two syncs at once (the Vault opening twice) find the same new accounts: add each once.
     for (const a of added) if (!s.accounts?.some((x) => x.id === a.id)) (s.accounts ??= []).push(a);
   });
@@ -464,6 +559,7 @@ export function accountsOf(b: Bot): { account: AppAccount; level: AppLevel }[] {
   const out: { account: AppAccount; level: AppLevel }[] = [];
   const s = getState();
   for (const a of s.accounts ?? []) {
+    if (!accountHere(a)) continue;
     const level = levelIn(s, b, a);
     if (level && a.status === "active") out.push({ account: a, level });
   }
@@ -508,6 +604,7 @@ export function appList(b: Bot) {
  * raw requests would skip these rules.
  */
 async function sessionFor(b: Bot) {
+  cx();
   const apps = appsOf(b);
   if (!apps.size) return null;
   const accounts = Object.fromEntries(
@@ -540,9 +637,10 @@ async function sessionFor(b: Bot) {
 
 /** A tool's behavior tags, readable name ("Send Email") and app, cached. */
 async function toolInfo(slug: string) {
+  const client = cx();
   const hit = live.tools.get(slug);
   if (hit) return hit;
-  const t = (await cx().tools.getRawComposioToolBySlug(slug)) as unknown as { tags?: string[]; name?: string; toolkit?: { slug?: string }; inputParameters?: Schema };
+  const t = (await client.tools.getRawComposioToolBySlug(slug)) as unknown as { tags?: string[]; name?: string; toolkit?: { slug?: string }; inputParameters?: Schema };
   const info = { tags: t.tags ?? [], name: t.name ?? slug, app: t.toolkit?.slug, input: t.inputParameters };
   live.tools.set(slug, info);
   return info;
@@ -701,8 +799,17 @@ export async function runAppAction(
   where: UseWhere,
   accountHint?: string | null,
   /** `onRead`: told of each read action that ran, with the account it ran in, its inputs and the app's whole answer (chat.ts draft_reply's targets). */
-  opts: { readOnly?: boolean; approved?: boolean; onRead?: (r: { accountId: string; app: string; args: Record<string, unknown>; data: unknown }) => void } = {},
+  opts: {
+    readOnly?: boolean;
+    approved?: boolean;
+    valid?: () => boolean;
+    approve?: (ask: AskSpec) => ReturnType<typeof heldAsk>;
+    onRead?: (r: { accountId: string; app: string; args: Record<string, unknown>; data: unknown }) => void;
+  } = {},
 ): Promise<string> {
+  if (opts.valid?.() === false) return "This run was stopped.";
+  const connection = opts.valid ? providerKey() : undefined;
+  const valid = () => opts.valid?.() !== false && (connection === undefined || providerKey() === connection);
   const b = bot(botId);
   if (!b) return "Unknown bot.";
   if (fromOutside(where.sessionId)) return NOT_FOR_OUTSIDE();
@@ -724,7 +831,14 @@ export async function runAppAction(
     used("refused");
     return `You can only read ${where_}. Ask ${ownerName()} for more access in Logins if you need it.`;
   }
+  let succeeded = false;
   const run = async (approvedBy?: AccessUse["approvedBy"]) => {
+    if (opts.valid) {
+      if (!valid()) return "This run was stopped or its Composio connection changed.";
+      const current = bot(botId);
+      const access = current && accountsOf(current).find((x) => x.account.id === account.id);
+      if (!access || (!reads && access.level !== "act")) return "This bot no longer has access to that action.";
+    }
     let res: { data?: unknown; error?: string | null; successful?: boolean };
     try {
       res = (await cxFor(b.id, app).tools.execute(action, {
@@ -734,10 +848,12 @@ export async function runAppAction(
         dangerouslySkipVersionCheck: true,
       } as never)) as unknown as typeof res;
     } catch (e) {
-      used("failed", approvedBy);
+      if (valid()) used("failed", approvedBy);
       throw e;
     }
+    if (!valid()) return "This run was stopped or its Composio connection changed.";
     const ok = !res.error && res.successful !== false;
+    succeeded = ok;
     used(ok ? "ok" : "failed", approvedBy);
     if (ok) markUsed(account.id);
     if (ok && reads) opts.onRead?.({ accountId: account.id, app, args: sent, data: res.data ?? {} });
@@ -765,10 +881,17 @@ export async function runAppAction(
     const out = await run("auto");
     const chatId = where.chatId ?? (where.sessionId ? getState().sessions.find((x) => x.id === where.sessionId)?.chatId : undefined);
     const why = saved ? "you always allow it" : just ? "Just do it is on" : "low risk";
-    if (chatId && !out.startsWith("Failed")) addMessage({ chatId, role: "system", text: `${b.name}: ${info.name} in ${where_} · ${why}, so didn't ask` });
+    if (chatId && succeeded) addMessage({ chatId, role: "system", text: `${b.name}: ${info.name} in ${where_} · ${why}, so didn't ask` });
     return out;
   }
+  if (!valid()) return "This run was stopped or its Composio connection changed.";
   used("waiting");
+  if (opts.approve) {
+    const answer = await opts.approve(ask);
+    if (answer === "gone") return "This run was stopped.";
+    if (answer === "late") return "The approval expired. The action did not run.";
+    return answer.reply === "reject" ? declined({ reply: answer }) : run("user");
+  }
   throw new NeedsOk(ask);
 }
 
@@ -842,6 +965,9 @@ const surelyMoney = (slug: string, app: string) => MONEY_APPS.has(app.toLowerCas
  * action's app (its slug's first word, "SLACKBOT_…" is slackbot) and the bot it's for, when it's for one.
  */
 export async function runAs(accountId: string, action: string, args: Record<string, unknown>, botId?: string) {
+  await loadDesktopComposio();
+  const account = getState().accounts?.find((a) => a.id === accountId);
+  if (account && !accountHere(account)) throw new Error("That account uses a different Composio connection.");
   const res = (await cxFor(botId, action.split("_")[0].toLowerCase() || undefined).tools.execute(action, { userId: userId(), connectedAccountId: accountId, arguments: args, dangerouslySkipVersionCheck: true } as never)) as unknown as {
     data?: unknown;
     error?: string | null;

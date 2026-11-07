@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /** Answering a request to use an app on the Mac: gone with Codex's app server (lib/server/mac.ts), so nothing asks anymore. */
 export async function POST() {
-  return Response.json({ error: "Nothing on your Mac is waiting for an answer." }, { status: 410 });
+  return Response.json({ error: "No local request is waiting for an answer." }, { status: 410 });
 }
 
 /**
@@ -20,6 +20,7 @@ export async function PATCH(request: Request) {
   const unready = notReady();
   if (unready) return unready;
   const body = (await request.json()) as { rules?: string[]; resetRules?: boolean; check?: boolean; fullAccess?: boolean };
+  if (body.fullAccess === true && process.platform !== "darwin") return Response.json({ error: "Local bot control is not available on this platform yet." }, { status: 400 });
   if (body.fullAccess === true && !fromBopsWindow(request)) return Response.json({ error: "Full access can only be turned on in the Bops app." }, { status: 403 });
   if (typeof body.fullAccess === "boolean") setFullAccess(body.fullAccess);
   update((state) => {

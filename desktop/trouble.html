@@ -44,8 +44,8 @@
     const detail = q.get("detail") || "";
     // What happened, and what the person can do about it. No jargon past the detail line.
     const lines = {
-      "port-taken": ["Another app is using Bops' spot", "Bops needs port 3210 on this Mac, and another app has it. Quit that app, then try again."],
-      "other-bops": ["Bops is already open somewhere else", "Another copy of Bops, maybe in another account on this Mac, is using its spot. Quit it there, then try again."],
+      "port-taken": ["Another app is using Bops' spot", "Another app is using Bops' spot on this computer. Close that app, then try again."],
+      "other-bops": ["Bops is already open somewhere else", "Another copy of Bops, maybe in another account on this computer, is using its spot. Quit it there, then try again."],
       "server-ended": ["Bops stopped while starting", "Its background part closed right away. Security software sometimes stops it; the logs say why."],
       "page-failed": ["Bops' window can't load", "Its page didn't load several times in the last two minutes. Try again, and if it happens again, send us the logs."],
       "page-crashed": ["Bops' window keeps crashing", "Its page stopped several times in the last two minutes. Try again, and if it happens again, send us the logs."],

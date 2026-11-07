@@ -95,9 +95,10 @@ const runnable = (p: string) => {
 /** BOPS_RELAY_BIN (the packaged app's bundled copy), else vendor/ (scripts/fetch-relay.sh), else one on PATH. */
 export function relayBin(): string | null {
   if (process.env.BOPS_RELAY_BIN) return runnable(process.env.BOPS_RELAY_BIN) ? process.env.BOPS_RELAY_BIN : null;
-  const vendored = join(process.cwd(), "vendor/orgo-relay/orgo-relay");
+  const name = process.platform === "win32" ? "orgo-relay.exe" : "orgo-relay";
+  const vendored = join(process.cwd(), "vendor", "orgo-relay", name);
   if (runnable(vendored)) return vendored;
-  for (const dir of (process.env.PATH ?? "").split(delimiter)) if (dir && runnable(join(dir, "orgo-relay"))) return join(dir, "orgo-relay");
+  for (const dir of (process.env.PATH ?? "").split(delimiter)) if (dir && runnable(join(dir, name))) return join(dir, name);
   return null;
 }
 
@@ -105,6 +106,7 @@ export function relayBin(): string | null {
 
 /** This Mac's name, as the user named it (System Settings → General → About). */
 function macName() {
+  if (process.platform === "win32") return Promise.resolve(hostname());
   return new Promise<string>((resolve) =>
     execFile("scutil", ["--get", "ComputerName"], (e, out) => resolve((!e && out.trim()) || hostname().replace(/\.local$/, "") || "Mac")),
   );
@@ -179,7 +181,7 @@ async function spawnAgent() {
   // The code goes in the environment (orgo-relay reads ORGO_RELAY_CODE), never on the command line, which any process can read.
   // Only what the agent needs: none of this server's own keys go to it.
   const env: Record<string, string> = { ORGO_RELAY_CODE: code };
-  for (const k of ["PATH", "HOME", "TMPDIR", "ORGO_RELAY_URL"]) {
+  for (const k of ["PATH", "HOME", "TMPDIR", "ORGO_RELAY_URL", "SystemRoot", "USERPROFILE", "TEMP", "TMP", "APPDATA", "LOCALAPPDATA"]) {
     const v = process.env[k];
     if (v) env[k] = v;
   }
@@ -258,7 +260,7 @@ async function availability(fresh = false) {
     sup.avail = { until: Date.now() + 30_000, ok: true, online: devices.find((d) => d.id === deviceId)?.online ?? null, rendezvous };
   } catch (e) {
     sup.avail = orgoUnavailable(e)
-      ? { until: Date.now() + 10 * 60_000, ok: false, reason: "Routing through your Mac isn't available on your Orgo account yet." }
+      ? { until: Date.now() + 10 * 60_000, ok: false, reason: "Desktop routing isn't available on your Orgo account yet." }
       : { until: Date.now() + 5_000, ok: false, reason: "Couldn't reach Orgo just now. Try again in a moment." };
   }
   return sup.avail;
@@ -272,15 +274,15 @@ const routed = () =>
 /** Where routing stands. `fresh` asks Orgo again rather than going by its last answer (availability). */
 export async function relayStatus(fresh = false): Promise<RelayStatus> {
   const relay = getState().relay;
-  const base = { on: !!relay?.on, running: running(), routedComputers: routed(), ...(relay?.deviceId ? { device: { id: relay.deviceId, name: relay.deviceName ?? "This Mac" } } : {}) };
-  if (onPostgres()) return { ...base, available: false, reason: "Routing through your Mac works in the Bops app on your Mac." };
+  const base = { on: !!relay?.on, running: running(), routedComputers: routed(), ...(relay?.deviceId ? { device: { id: relay.deviceId, name: relay.deviceName ?? "Desktop" } } : {}) };
+  if (onPostgres()) return { ...base, available: false, reason: "Routing through this computer requires the Bops desktop app." };
   if (!(await loadOrgoKey())) return { ...base, available: false, reason: "Sign in to Orgo first." };
   if (!relayBin()) return { ...base, available: false, reason: "This copy of Bops doesn't include the relay yet." };
   const a = await availability(fresh);
   if (!a.ok) return { ...base, available: false, reason: a.reason };
   const here = await agentConnected();
   const online = here ?? a.online ?? undefined;
-  const reason = relay?.on && !running() && sup.lastError ? `The relay on this Mac stopped (${sup.lastError}). Bops is starting it again.` : undefined;
+  const reason = relay?.on && !running() && sup.lastError ? `The relay on this computer stopped (${sup.lastError}). Bops is starting it again.` : undefined;
   return { ...base, on: !!relay?.on || !relay?.turnedOff, available: true, ...(online === undefined ? {} : { online }), ...(reason ? { reason } : {}) };
 }
 

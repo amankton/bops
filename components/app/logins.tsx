@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SECRET_STORAGE } from "@/lib/platform";
 import { levelOf as memberLevelOf } from "@/lib/member-access";
 import {
   accountIn,
@@ -209,7 +210,7 @@ export function LoginsPage({
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="text-[22px] font-bold leading-7 tracking-[-0.02em]">Logins</span>
               <span className="mt-0.5 text-[13px] leading-[19px] text-[#6B6B6B]">
-                {shared ? "Your own apps and site logins. They're yours, not this workspace's bots'. Keys here are this workspace's." : "Passwords stay in your Mac's Keychain, and no AI sees them."}
+                {shared ? "Your own apps and site logins. They're yours, not this workspace's bots'. Keys here are this workspace's." : `Passwords stay in ${SECRET_STORAGE}, and no AI sees them.`}
               </span>
             </div>
             <div className="relative shrink-0">
@@ -304,7 +305,7 @@ export function LoginsPage({
           )}
 
           {!all.length ? (
-            editing !== "new" && <QuickStart onPick={(app) => setPicking({ app })} />
+            editing !== "new" && !picking && <QuickStart onPick={(app) => setPicking({ app })} />
           ) : !hits.length && !others.length ? (
             <div className="py-10 text-center text-[13.5px] leading-5 text-[#6B6B6B]">{term ? <>Nothing matches &ldquo;{q.trim()}&rdquo;.</> : only === "attention" ? "Nothing needs you." : `No logins in ${wsName} yet.`}</div>
           ) : (
@@ -924,7 +925,7 @@ function LoginPanel({
         {sure ? (
           <>
             <span className="w-full pb-1 text-[12.5px] leading-[18px] text-[#3A3A38]">
-              {a ? `Disconnect ${title}? No bot can use it any more, in any workspace.` : l ? `Delete the ${l.site} login? It's gone from your Mac's Keychain too.` : `Remove ${k!.name} from your Orgo vault? Your bots stop using it.`}
+              {a ? `Disconnect ${title}? No bot can use it any more, in any workspace.` : l ? `Delete the ${l.site} login? It's gone from ${SECRET_STORAGE} too.` : `Remove ${k!.name} from your Orgo vault? Your bots stop using it.`}
             </span>
             <button
               disabled={busy}

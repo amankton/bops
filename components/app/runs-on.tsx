@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { THIS_COMPUTER, WINDOWS } from "@/lib/platform";
 import { workBot, type AppState, type Bot, type RunnerState } from "@/lib/types";
 import { Mascot } from "./mascot";
 import { undash } from "./side-group";
@@ -14,8 +15,8 @@ import { option, post, radio, teamOf } from "./ui";
 export type RunsOnInfo = { runsOn: "cloud" | "mac" | null; missing: boolean; asleep: string[]; down?: Record<string, string> };
 
 const CHOICES = [
-  { id: "cloud", name: "Cloud", line: "Tasks keep running when your Mac is closed." },
-  { id: "mac", name: "This Mac", line: "Only while Bops is open on this Mac." },
+  { id: "cloud", name: "Cloud", line: WINDOWS ? "Tasks keep running when your PC is closed." : "Tasks keep running when your Mac is closed." },
+  { id: "mac", name: THIS_COMPUTER, line: WINDOWS ? "Only while Bops is open on this PC." : "Only while Bops is open on this Mac." },
 ] as const;
 
 /**

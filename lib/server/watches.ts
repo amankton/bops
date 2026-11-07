@@ -185,6 +185,7 @@ function macLookFor(app: string, title: string) {
 
 /** Watch a window on the user's Mac. The workspace's main bot keeps an eye on it and gives the heads-up. */
 export async function startMacWatch(app: string, windowId: number, title: string, lookFor?: string) {
+  if (process.platform === "win32") throw new Error("Open Your PC to view Windows displays and windows. For automatic checks, create a web watch.");
   const s = getState();
   const main = s.bots.find((b) => b.isMain && workspaceOf(b) === (s.workspace ?? MAIN_WORKSPACE)) ?? s.bots.find((b) => b.isMain);
   if (!main) throw new Error("there's no main bot to watch it");
@@ -675,7 +676,7 @@ async function look(watchId: string, now = false): Promise<CheckResult | undefin
   const w = watchById(watchId);
   if (w?.page) return checkPage(watchId, now);
   const b = w && bot(w.botId);
-  if (!w || !b || looking.has(watchId) || (w.paused && !now) || (isScreenWatch(w) && busy(w.botId, w.display))) return;
+  if (!w || !b || (process.platform === "win32" && w.mac) || looking.has(watchId) || (w.paused && !now) || (isScreenWatch(w) && busy(w.botId, w.display))) return;
   const endpoint = isScreenWatch(w) ? screenEndpoint(b, w.display) : null;
   if (isScreenWatch(w) && !endpoint) return;
   const epoch = stateEpoch();

@@ -214,7 +214,7 @@ const patch = (messageId: string, proposalId: string, fn: (p: SkillProposal) => 
 
 /** What changed since a proposal was made, in words, or null when nothing did. `own`: this Mac's own turn made it as it is (ownHere); else it's always shown on what the skill is now. */
 function staleWhy(p: SkillProposal, version: string, now: { text: string | null; changed: boolean }, own: boolean): string | null {
-  if (!own && !p.unchecked) return "It wasn't made on this Mac, so here's the change on what it is now.";
+  if (!own && !p.unchecked) return "It wasn't made on this computer, so here's the change on what it is now.";
   if (version !== p.base) return version ? `It's at version ${version} now${p.base ? `, and this was proposed for ${p.base}` : ""}.` : "It was proposed for a version it no longer has.";
   if (now.changed) return "It has changes not published yet, which accepting this publishes too.";
   if (p.baseSha && sha256Hex(now.text ?? "") !== p.baseSha) return `${p.file} changed since this was proposed.`;
@@ -236,7 +236,7 @@ const going = new Set<string>();
  * rejected, on a computer's runner, and while another Accept of it goes.
  */
 export function acceptProposal(messageId: string, proposalId: string, seen?: string): ProposalAnswer {
-  if (onRunner()) return { ok: false, status: 409, error: "Accept it in Bops on your Mac." };
+  if (onRunner()) return { ok: false, status: 409, error: "Accept it in the Bops desktop app." };
   const f = find(messageId, proposalId);
   if (!f) return { ok: false, status: 404, error: "That proposal isn't here anymore." };
   const { p } = f;
@@ -274,7 +274,7 @@ export function acceptProposal(messageId: string, proposalId: string, seen?: str
 
 /** The owner's Reject: dropped, nothing changed. */
 export function rejectProposal(messageId: string, proposalId: string): ProposalAnswer {
-  if (onRunner()) return { ok: false, status: 409, error: "Reject it in Bops on your Mac." };
+  if (onRunner()) return { ok: false, status: 409, error: "Reject it in the Bops desktop app." };
   const f = find(messageId, proposalId);
   if (!f) return { ok: false, status: 404, error: "That proposal isn't here anymore." };
   if (f.p.status) return { ok: false, status: 409, error: f.p.status === "accepted" ? "It was accepted already." : "It was rejected already." };

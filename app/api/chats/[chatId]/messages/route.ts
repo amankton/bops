@@ -10,6 +10,7 @@ import { chat, getState, react } from "@/lib/server/store";
 import type { Tapback } from "@/lib/types";
 import { notReady } from "@/lib/server/ready";
 import { fromBopsWindow } from "@/lib/server/ui-token";
+import { desktopAgentFor, desktopAgentInfo, desktopChat } from "@/lib/server/desktop-agents";
 
 /** The user texts a bot or a group. Replies, threads and hand-offs happen in the background. */
 export async function POST(request: Request, ctx: RouteContext<"/api/chats/[chatId]/messages">) {
@@ -47,6 +48,15 @@ export async function POST(request: Request, ctx: RouteContext<"/api/chats/[chat
   const aboutApp = appNote === true && fromBopsWindow(request) && !sharedOpen() && appsOwnShown(getState());
   // A workspace whose chat goes through Bops Cloud: written there, and answered on the bot's computer (lib/server/cloud-chat.ts).
   const words = text?.trim() ?? "";
+  const desktopAgent = c.kind === "bot" ? desktopAgentFor(c.botIds[0], picked) : undefined;
+  if (desktopAgent) {
+    if (!fromBopsWindow(request) || sharedOpen()) return Response.json({ error: "Use this agent in your own desktop window." }, { status: 403 });
+    if (pics.length || added.length || lookingAt || aboutApp) return Response.json({ error: "Desktop agents currently take text messages. Include a local file path in your message when needed." }, { status: 400 });
+    try { await desktopAgentInfo(c.botIds[0], desktopAgent.id); }
+    catch (error) { return Response.json({ error: (error as Error).message }, { status: 400 }); }
+    void desktopChat(chatId, words, picked, replyTo).catch(() => {});
+    return Response.json({ ok: true });
+  }
   if (words && !sharedOpen() && sendsThroughCloud(chatId, { images: pics.length, files: added.length, lookingAt: typeof lookingAt === "string" ? lookingAt : undefined, appNote: aboutApp, picks: picks !== undefined })) {
     const how = await sendThroughCloud(chatId, words, replyTo);
     if (how === "sent") return Response.json({ ok: true });

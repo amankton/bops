@@ -1,5 +1,6 @@
 "use client";
 
+import { DESKTOP_NAME } from "@/lib/platform";
 import { screenNo as screenNumber } from "@/lib/screens";
 import { askKind, needsYou } from "@/lib/asks";
 import { useEffect, useRef, useState } from "react";
@@ -147,8 +148,8 @@ export function StatusIcon({ session: s, size = 13, dark, owner, member, okWait 
   const tip =
     s.askWhere && live(s)
       ? owner
-        ? "Waiting for the owner: their Mac or the cloud?"
-        : "Waiting for you: your Mac or the cloud?"
+        ? "Waiting for the owner to choose their computer or the cloud"
+        : `Waiting for you to choose your ${DESKTOP_NAME} or the cloud`
       : waits
         ? owner
           ? "Waiting for the owner's OK"

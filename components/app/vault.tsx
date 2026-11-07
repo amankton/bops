@@ -1,5 +1,6 @@
 "use client";
 
+import { SECRET_STORAGE } from "@/lib/platform";
 import { useState } from "react";
 import { mayUseLogin, type AppState, type VaultLogin } from "@/lib/types";
 import { isMcp, type Service } from "@/lib/vault-services";
@@ -195,7 +196,7 @@ export function LoginForm({ state, login, onDone }: { state: AppState; login?: V
           Cancel
         </button>
         <span className="flex-1" />
-        <span className="text-[11.5px] leading-4 text-[#9A9A98]">Stored in your Mac&apos;s Keychain</span>
+        <span className="text-[11.5px] leading-4 text-[#9A9A98]">Stored in {SECRET_STORAGE}</span>
       </div>
     </form>
   );

@@ -1,10 +1,11 @@
+import { DESKTOP_NAME, WINDOWS } from "@/lib/platform";
 import { draftStatus } from "./reply-drafts";
 import { live, pausedForOk, type AppState, type DeletedDays, type KeepDays, type Message, type Session } from "./types";
 
 /**
  * Settings → Your data (AppState.privacy): how long chats and calls are kept, what a delete leaves behind,
  * and what the window is told about where the user's things are. Shared by the window and the server; no
- * server imports. The sweep, the copies of what was deleted and this Mac's numbers are lib/server/privacy.ts
+ * server imports. The sweep, the copies of what was deleted and this ${DESKTOP_NAME}'s numbers are lib/server/privacy.ts
  * and lib/server/deleted.ts.
  */
 
@@ -12,7 +13,7 @@ export const DAY_MS = 24 * 3600_000;
 
 /** Keep chats and calls: until the user deletes them, a year, 90 days, 30 days (the order Settings lists them in). */
 export const KEEP_OPTIONS: readonly KeepDays[] = [null, 365, 90, 30];
-/** When the user deletes something: gone at once, or a copy kept on this Mac 7 or 30 days. */
+/** When the user deletes something: gone at once, or a copy kept on this ${DESKTOP_NAME} 7 or 30 days. */
 export const DELETED_OPTIONS: readonly DeletedDays[] = [0, 7, 30];
 
 export const isKeepDays = (v: unknown): v is KeepDays => v === null || v === 30 || v === 90 || v === 365;
@@ -44,7 +45,7 @@ export const busyThreads = (state: Pick<AppState, "sessions" | "appApprovals">) 
 
 /**
  * The images a busy thread works from, by upload id: a task started from a message with images is handed
- * where they are on this Mac in its goal (chat.ts withImages), so the message it was started from, and those
+ * where they are on this ${DESKTOP_NAME} in its goal (chat.ts withImages), so the message it was started from, and those
  * files, are in use while it is, though only the bot's reply carries the thread's chip.
  */
 export function busyImages(state: Pick<AppState, "sessions">, busy: ReadonlySet<string>): Set<string> {
@@ -106,7 +107,7 @@ export const uploadIdsOf = (messages: readonly Message[]) => new Set(messages.fl
 export const pageIdsOf = (messages: readonly Message[]) => new Set(messages.flatMap((m) => m.text?.match(/\bpage_[a-z0-9]+/gi) ?? []));
 
 /**
- * What's still in use on this Mac, so a delete never takes it: the images the messages left show and the ones a
+ * What's still in use on this ${DESKTOP_NAME}, so a delete never takes it: the images the messages left show and the ones a
  * busy thread works from (busyImages), and the pages those messages or a thread's own words (its goal, its
  * replies) link to.
  */
@@ -162,18 +163,18 @@ export function clearPlan(state: Pick<AppState, "messages" | "sessions" | "appAp
 
 /**
  * What Delete now takes, as Settings says before it asks: the messages and threads (from Bops Cloud and every
- * Mac); for every bot, this Mac's own too, as the sweep's: its files (images, pages, last screens) older than the
+ * Mac); for every bot, this ${DESKTOP_NAME}'s own too, as the sweep's: its files (images, pages, last screens) older than the
  * cutoff that no message left shows, and the lines of its call notes and model choices older than it.
  */
 export type ClearGoes = ClearChoice & { messages: number; threads: number; files: number; lines: number };
 
-/** A count of this Mac's files: how many (none for a single file) and their size; `more` when the count stopped at its cap. */
+/** A count of this ${DESKTOP_NAME}'s files: how many (none for a single file) and their size; `more` when the count stopped at its cap. */
 export type HereCount = { count?: number; bytes: number; more?: true };
 
 /** What's in Recently deleted, as Settings lists it: what it was, when it was deleted and when it goes for good (the sooner of its days and the user's keep). */
 export type DeletedItem = { id: string; kind: "message" | "thread" | "chat" | "many"; what: string; messages: number; threads?: number; at: number; until: number };
 
-/** GET /api/privacy (app/api/privacy/route.ts): the user's choices, this Mac's numbers, and Recently deleted. */
+/** GET /api/privacy (app/api/privacy/route.ts): the user's choices, this ${DESKTOP_NAME}'s numbers, and Recently deleted. */
 export type PrivacyInfo = {
   keepDays: KeepDays;
   deletedDays: DeletedDays;
@@ -184,7 +185,7 @@ export type PrivacyInfo = {
   deleted: DeletedItem[];
   /** With ?keepDays=: what choosing it deletes now (KeepGoes). */
   goes?: KeepGoes;
-  /** With ?deletedDays=: what choosing it deletes now from this Mac's Recently deleted (DeletedGoes). */
+  /** With ?deletedDays=: what choosing it deletes now from this ${DESKTOP_NAME}'s Recently deleted (DeletedGoes). */
   goesDeleted?: DeletedGoes;
   /** With ?clear= (and &bot=): what Delete now deletes (ClearGoes). */
   goesNow?: ClearGoes;
@@ -195,15 +196,15 @@ export type PrivacyInfo = {
 };
 
 /**
- * What a shorter keep deletes now: messages and threads from Bops Cloud and every Mac; from this Mac, its
+ * What a shorter keep deletes now: messages and threads from Bops Cloud and every Mac; from this ${DESKTOP_NAME}, its
  * files (images, pages, last screens), the lines of its call notes and model choices, and the copies in its
  * Recently deleted that go whole or in part. Each Mac sweeps its own files the same way at its next check.
  */
 export type KeepGoes = { keepDays: KeepDays; messages: number; threads: number; files: number; lines: number; copies: number };
-/** What fewer days for what the user deletes takes from this Mac's Recently deleted now (the other Macs' go at their next check). */
+/** What fewer days for what the user deletes takes from this ${DESKTOP_NAME}'s Recently deleted now (the other Macs' go at their next check). */
 export type DeletedGoes = { deletedDays: DeletedDays; copies: number };
 
-/** Whether a shorter keep deletes anything now, as far as this Mac can tell. */
+/** Whether a shorter keep deletes anything now, as far as this ${DESKTOP_NAME} can tell. */
 export const keepGoesAny = (g: KeepGoes) => g.messages + g.threads + g.files + g.lines + g.copies > 0;
 
 /** A size as people say it: 0 KB, 340 KB, 1.2 MB, 3.4 GB. */
@@ -223,57 +224,57 @@ const ageOf = (keepDays: KeepDays) => `older than ${keepDays === 365 ? "a year" 
 
 /**
  * What a shorter keep deletes now, as Settings asks before it saves: the messages and threads from
- * everywhere, this Mac's own from this Mac. With `goes` null (Bops couldn't say), it still asks, in general.
+ * everywhere, this ${DESKTOP_NAME}'s own from this ${DESKTOP_NAME}. With `goes` null (Bops couldn't say), it still asks, in general.
  */
 export function goesLine(keepDays: KeepDays, goes: KeepGoes | null) {
   const age = ageOf(keepDays);
-  if (!goes) return `Bops couldn't check what this deletes now. Everything ${age} goes from Bops Cloud and all your Macs. It can't be undone.`;
+  if (!goes) return `Bops couldn't check what this deletes now. Everything ${age} goes from Bops Cloud and all your ${WINDOWS ? "computers" : "Macs"}. It can't be undone.`;
   const all = listed([goes.messages ? many(goes.messages, "message") : "", goes.threads ? many(goes.threads, "thread") : ""].filter(Boolean));
   const mine = listed(
     [goes.files ? many(goes.files, "file") : "", goes.lines ? many(goes.lines, "line of notes", "lines of notes") : "", goes.copies ? `${many(goes.copies, "copy", "copies")} in Recently deleted` : ""].filter(Boolean),
   );
-  const everywhere = all ? `${all} ${age} from Bops Cloud and all your Macs` : "";
-  const here = mine ? `${mine}${all ? "" : ` ${age}`} from this Mac` : "";
+  const everywhere = all ? `${all} ${age} from Bops Cloud and all your ${WINDOWS ? "computers" : "Macs"}` : "";
+  const here = mine ? `${mine}${all ? "" : ` ${age}`} from this ${DESKTOP_NAME}` : "";
   return `This deletes ${everywhere}${everywhere && here ? ", and " : ""}${here}. It can't be undone.`;
 }
 
 /**
- * What fewer days for what the user deletes takes, as Settings asks before it saves: this Mac's copies now,
+ * What fewer days for what the user deletes takes, as Settings asks before it saves: this ${DESKTOP_NAME}'s copies now,
  * and the other Macs' at their next check (copies stay on the Mac they were made on). With `goes` null (Bops
  * couldn't say how many), it still asks.
  */
 export function deletedGoesLine(deletedDays: DeletedDays, goes: DeletedGoes | null) {
   const age = deletedDays ? ` older than ${deletedDays} days` : "";
   const here = !goes
-    ? `This deletes the copies${age} in Recently deleted on this Mac now.`
+    ? `This deletes the copies${age} in Recently deleted on this ${DESKTOP_NAME} now.`
     : goes.copies
-      ? `This deletes ${many(goes.copies, "copy", "copies")}${age} in Recently deleted on this Mac now.`
-      : "Nothing in Recently deleted on this Mac goes now.";
-  return `${here} Copies${age} on your other Macs go at their next check. It can't be undone.`;
+      ? `This deletes ${many(goes.copies, "copy", "copies")}${age} in Recently deleted on this ${DESKTOP_NAME} now.`
+      : `Nothing in Recently deleted on this ${DESKTOP_NAME} goes now.`;
+  return `${here} Copies${age} on your other ${WINDOWS ? "computers" : "Macs"} go at their next check. It can't be undone.`;
 }
 
 /**
  * What Delete now takes, as Settings asks before it goes (`bot`: the name of the bot it's for): the messages and
- * threads from everywhere, this Mac's own from this Mac; whether they can come back from Recently deleted
- * (`deletedDays`), which this Mac's files and notes never can; and that Knowledge keeps what it learned. With
+ * threads from everywhere, this ${DESKTOP_NAME}'s own from this ${DESKTOP_NAME}; whether they can come back from Recently deleted
+ * (`deletedDays`), which this ${DESKTOP_NAME}'s files and notes never can; and that Knowledge keeps what it learned. With
  * `goes` null (Bops couldn't say), it still asks, in general.
  */
 export function clearLine(goes: ClearGoes | null, deletedDays: DeletedDays, bot?: string) {
   const knowledge = " Knowledge keeps what it learned from them.";
-  if (!goes) return `Bops couldn't check what this deletes. It deletes ${bot ? `${bot}'s messages and threads` : "your messages and threads"} from Bops Cloud and all your Macs.${knowledge}`;
+  if (!goes) return `Bops couldn't check what this deletes. It deletes ${bot ? `${bot}'s messages and threads` : "your messages and threads"} from Bops Cloud and all your ${WINDOWS ? "computers" : "Macs"}.${knowledge}`;
   const age = goes.olderThan === null ? "" : ` ${ageOf(goes.olderThan)}`;
   const all = listed([goes.messages ? many(goes.messages, "message") : "", goes.threads ? many(goes.threads, "thread") : ""].filter(Boolean));
   const mine = listed([goes.files ? many(goes.files, "file") : "", goes.lines ? many(goes.lines, "line of notes", "lines of notes") : ""].filter(Boolean));
   if (!all && !mine) return `${bot ? `${bot} has nothing` : "There's nothing"}${age} to delete.`;
-  const everywhere = all ? `${bot ? `${bot}'s ` : ""}${all}${age} from Bops Cloud and all your Macs` : "";
-  const here = mine ? `${mine}${all ? "" : age} from this Mac` : "";
+  const everywhere = all ? `${bot ? `${bot}'s ` : ""}${all}${age} from Bops Cloud and all your ${WINDOWS ? "computers" : "Macs"}` : "";
+  const here = mine ? `${mine}${all ? "" : age} from this ${DESKTOP_NAME}` : "";
   const back = !all
     ? " It can't be undone."
     : deletedDays
-      ? ` You can restore the messages and threads from Recently deleted on this Mac for ${deletedDays} days.${mine ? " The files and notes can't be restored." : ""}`
+      ? ` You can restore the messages and threads from Recently deleted on this ${DESKTOP_NAME} for ${deletedDays} days.${mine ? " The files and notes can't be restored." : ""}`
       : " It can't be undone.";
   return `This deletes ${everywhere}${everywhere && here ? ", and " : ""}${here}.${back}${all ? knowledge : ""}`;
 }
 
-/** Whether Delete now deletes anything, as far as this Mac can tell. */
+/** Whether Delete now deletes anything, as far as this ${DESKTOP_NAME} can tell. */
 export const clearGoesAny = (g: ClearGoes) => g.messages + g.threads + g.files + g.lines > 0;

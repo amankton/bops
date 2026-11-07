@@ -1,6 +1,7 @@
 import { normalizeSchedule } from "@/cloud/schedule";
 import type { AppConnecting, Schedule } from "@/lib/types";
 import { cancelConnect, connectApp, disconnectAccount, labelAccount, syncApps } from "@/lib/server/composio";
+import { loadDesktopComposio } from "@/lib/server/composio-desktop";
 import { notReady } from "@/lib/server/ready";
 import { fromBopsWindow } from "@/lib/server/ui-token";
 
@@ -54,7 +55,10 @@ export async function DELETE(request: Request) {
   if (unready) return unready;
   const { account, waiting } = (await request.json().catch(() => ({}))) as { account?: string; waiting?: string };
   try {
-    if (waiting) cancelConnect(waiting);
+    if (waiting) {
+      await loadDesktopComposio();
+      cancelConnect(waiting);
+    }
     if (account) await disconnectAccount(account);
     return Response.json({ ok: true });
   } catch (e) {

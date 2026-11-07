@@ -31,6 +31,9 @@ export async function GET() {
 export async function POST(request: Request) {
   const unready = notReady();
   if (unready) return unready;
+  if (process.platform === "win32" || getState().desktopRoutineDevice) {
+    return Response.json({ error: "Change where routines run from Where your bots work on your PC." }, { status: 409 });
+  }
   const body = (await request.json().catch(() => ({}))) as { runsOn?: unknown };
   if (body.runsOn !== "cloud" && body.runsOn !== "mac") return Response.json({ error: "runsOn: cloud or mac" }, { status: 400 });
   const res = await setRunsOn(body.runsOn);

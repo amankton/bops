@@ -16,17 +16,18 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { fill } from "./fake-exports.mjs";
 
 for (const k of Object.keys(process.env)) if (/^(BOPS|COMPOSIO|ORGO)_/.test(k)) delete process.env[k];
 process.env.COMPOSIO_API_KEY = "test-composio";
-const root = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+const root = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
 const scratch = mkdtempSync(join(tmpdir(), "bops-test-access-"));
+process.env.BOPS_DESKTOP_USER_DATA = scratch;
 
 const forward = (mod, names) => names.map((n) => `export const ${n} = (...a) => globalThis.__fake[${JSON.stringify(mod)}].${n}(...a);`).join("\n");
 const FAKES = {
-  store: forward("store", ["addMessage", "bot", "getState", "id", "installId", "ownerName", "ownSession", "pullState", "session", "stateDevice", "stateEpoch", "statePulledAt", "update", "stateReady", "userDir", "watchArrivals", "watchChanges", "watchLoads"]),
+  store: forward("store", ["addMessage", "bot", "getState", "id", "installId", "ownerName", "ownSession", "pullState", "sameState", "session", "stateDevice", "stateEpoch", "statePulledAt", "stateUser", "update", "stateReady", "userDir", "watchArrivals", "watchChanges", "watchLoads"]),
   orgo: forward("orgo", ["apiKey", "callOrgo"]),
   keys: forward("keys", ["listKeys", "keysOf"]),
   cloud: forward("cloud", ["cloudOn", "cloudProxy", "cloudSession", "cloudSessionNow", "cloudUrl"]),
@@ -132,6 +133,11 @@ globalThis.__fake = {
     installId: () => "test",
     ownerName: () => "Sam",
     stateReady: () => true,
+    stateUser: () => state.account?.user.id ?? null,
+    sameState: () => {
+      const owner = state.account?.user.id;
+      return () => state.account?.user.id === owner;
+    },
     userDir: () => scratch,
     watchChanges: () => {},
     // What runs once changes from elsewhere came in (another Bops's, merged in): arrive() stands in for that.
@@ -169,12 +175,12 @@ globalThis.__fake = {
   },
 };
 
-const T = await import(`${root}/lib/types.ts`);
-const C = await import(`${root}/lib/server/composio.ts`);
-const P = await import(`${root}/lib/server/permission.ts`);
-const R = await import(`${root}/lib/permission.ts`);
-const A = await import(`${root}/lib/server/access-sync.ts`);
-const O = await import(`${root}/lib/server/sync-outbox.ts`);
+const T = await import("../lib/types.ts");
+const C = await import("../lib/server/composio.ts");
+const P = await import("../lib/server/permission.ts");
+const R = await import("../lib/permission.ts");
+const A = await import("../lib/server/access-sync.ts");
+const O = await import("../lib/server/sync-outbox.ts");
 const bot = (id) => state.bots.find((b) => b.id === id);
 const account = (id) => state.accounts.find((a) => a.id === id);
 
@@ -253,7 +259,7 @@ await check("a member's task (one they started or told something, or a part of o
 });
 
 await check("Used in: an account switched on in another workspace is every bot's there by default, the picker narrowing it; off, no bot there has it, whatever it was given", async () => {
-  const L = await import(`${root}/lib/server/logins.ts`);
+  const L = await import("../lib/server/logins.ts");
   const lo = bot("lo");
   const gmail = account("ca_gmail");
   assert.equal(T.levelIn(state, lo, gmail), null, "Lo, of Local, hasn't Main's Gmail");
@@ -608,7 +614,7 @@ await check("accounts connected from now on are every bot's of their workspace; 
         }),
       },
     }),
-    authConfigs: { list: async () => ({ items: [{ id: "ac_1", status: "ENABLED" }] }) },
+    authConfigs: { list: async () => ({ items: [{ id: "ac_1", status: "ENABLED", toolkit: { slug: "gmail" } }] }) },
     connectedAccounts: {
       list: async () => ({
         items: [...state.accounts.filter((a) => !a.id.startsWith("open:")).map((a) => ({ id: a.id, status: "ACTIVE", toolkit: { slug: a.app } })), { id: "ca_found", status: "ACTIVE", toolkit: { slug: "gmail" } }],
@@ -728,7 +734,7 @@ await check("signing in again keeps the account's check (it moves to the new acc
 });
 
 await check("POST /api/apps takes How often from the Bops window only, as a schedule Bops keeps", async () => {
-  const route = await import(`${root}/app/api/apps/route.ts`);
+  const route = await import("../app/api/apps/route.ts");
   const post = (body, headers = {}) => route.POST(new Request("http://localhost/api/apps", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) }));
   state.connecting = [];
   let res = await post({ app: "gmail", grant: { bots: ["boppy"], level: "read", check: { kind: "daily", time: "8 AM" } } });
@@ -752,6 +758,122 @@ await check("POST /api/apps takes How often from the Bops window only, as a sche
     assert.equal(state.connecting.at(-1).grant.check, undefined);
   } finally {
     delete process.env.BOPS_UI_TOKEN;
+  }
+});
+
+await check("desktop MCP calls use the bot's app grants and approval cards", async () => {
+  const { startDesktopApps } = await import("../lib/server/desktop-apps.ts");
+  Object.assign(state, fromV028(), { appApprovals: [] });
+  bot("boppy").access.ca_gmail = "read";
+  let alive = true;
+  const bridge = await startDesktopApps("boppy", { chatId: "bot:boppy" }, () => alive);
+  assert.ok(bridge);
+  let requestId = 0;
+  const call = async (name, args) => {
+    const r = await fetch(bridge.url, {
+      method: "POST",
+      headers: { authorization: `Bearer ${bridge.token}`, accept: "application/json, text/event-stream", "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++requestId, method: name, params: args }),
+      signal: AbortSignal.timeout(5000),
+    });
+    assert.ok(r.ok);
+    const payload = await r.json();
+    assert.ok(!payload.error, JSON.stringify(payload.error));
+    return payload.result;
+  };
+  const runAppAction = (action) => call("tools/call", { name: "use_app", arguments: { action, arguments: {} } }).then((r) => r.content[0].text);
+  const before = executed.length;
+  const pollBefore = P.askTimingHeld.pollMs;
+  P.askTimingHeld.pollMs = 10;
+  try {
+    assert.equal((await fetch(bridge.url, { method: "POST" })).status, 403);
+    assert.deepEqual((await call("tools/list")).tools.map((t) => t.name), ["find_app_actions", "use_app"]);
+    assert.equal(await runAppAction("GMAIL_FETCH_EMAILS"), '{"ok":true}');
+    assert.match(await runAppAction("GMAIL_SEND_EMAIL"), /only read/);
+    assert.equal(executed.length, before + 1);
+    bot("boppy").access.ca_gmail = "act";
+    const pending = runAppAction("GMAIL_SEND_EMAIL");
+    for (let i = 0; i < 100 && !state.appApprovals.length; i++) await new Promise((ok) => setTimeout(ok, 10));
+    const ask = state.appApprovals.at(-1);
+    assert.ok(ask, "A write waits in Boppy's chat");
+    assert.equal(ask.chatId, "bot:boppy");
+    assert.equal(executed.length, before + 1);
+    bot("boppy").access.ca_gmail = "none";
+    assert.equal(P.replyToAsk(ask.id, "once"), undefined);
+    assert.match(await pending, /no longer has access/);
+    assert.equal(executed.length, before + 1, "Approval never bypasses a revoked grant");
+    assert.deepEqual((await call("tools/list")).tools, []);
+    alive = false;
+    const blocked = await fetch(bridge.url, { method: "POST", headers: { authorization: `Bearer ${bridge.token}` } });
+    assert.equal(blocked.status, 403);
+  } finally {
+    bridge.close();
+    P.askTimingHeld.pollMs = pollBefore;
+  }
+});
+
+if (process.platform === "win32") await check("PC Composio setup verifies a project key, persists it locally, and connects accounts without using Bops Cloud's provider", async () => {
+  const setup = await import("../app/api/apps/composio/route.ts");
+  const catalog = await import("../app/api/apps/catalog/route.ts");
+  const cloud = globalThis.__fake.cloud;
+  const was = { ...cloud };
+  const fetchBefore = globalThis.fetch;
+  const provider = globalThis.__fake.composio;
+  const linkBefore = provider.client.connectedAccounts.link;
+  const made = [];
+  provider.made = (config) => made.push(config);
+  Object.assign(cloud, {
+    cloudOn: () => true,
+    cloudProxy: () => ({ key: "fake_orgo_key", url: "https://cloud.test/proxy/composio" }),
+    cloudSession: async () => { throw new Error("Bops Cloud is unavailable"); },
+  });
+  const key = "fixture-composio-project-key";
+  const token = "fixture-local-window";
+  process.env.BOPS_UI_TOKEN = token;
+  state.account = { user: { id: "pc-owner" } };
+  state.connecting = [];
+  globalThis.fetch = async (url, options) => {
+    assert.equal(String(url), "https://backend.composio.dev/api/v3/toolkits?limit=1");
+    return options.headers["x-api-key"] === key ? Response.json({ items: [{}] }) : Response.json({}, { status: 401 });
+  };
+  const save = (value, authorized = true) => setup.POST(new Request("http://localhost/api/apps/composio", {
+    method: "POST", headers: authorized ? { "x-bops-window": token } : {}, body: JSON.stringify({ key: value }),
+  }));
+  try {
+    assert.deepEqual(await (await catalog.GET()).json(), { available: false, canSetUp: true, onThisPC: false, apps: [] });
+    assert.equal((await save(key, false)).status, 403);
+    assert.equal((await save("invalid-fixture-key")).status, 400);
+    assert.deepEqual(await (await save(key)).json(), { ok: true });
+    globalThis.bopsDesktopComposio = undefined; // Next server restart: read it back from Windows secure storage.
+    const loaded = await (await catalog.GET()).json();
+    assert.equal(loaded.onThisPC, true);
+    assert.ok(loaded.apps.some((a) => a.app === "gmail"));
+    assert.ok(!JSON.stringify(loaded).includes(key));
+    assert.equal(made.at(-1).apiKey, key);
+    assert.equal(made.at(-1).baseURL, undefined);
+    let finish, scopedUser;
+    provider.client.connectedAccounts.link = async (user, _config, opts) => {
+      scopedUser = user;
+      assert.equal(opts.callbackUrl, undefined);
+      return { id: "ca_pc", waitForConnection: () => new Promise((resolve) => { finish = resolve; }) };
+    };
+    await C.connectApp("gmail", "PC Gmail", undefined, { bots: ["boppy"], level: "read" });
+    assert.match(scopedUser, /^bops-pc-[0-9a-f]{32}$/);
+    finish({ id: "ca_pc" });
+    await settle();
+    assert.equal(account("ca_pc").composioDevice, scopedUser);
+    assert.equal(C.accountsOf(bot("boppy")).find(({ account }) => account.id === "ca_pc").level, "read");
+    assert.equal(C.accountsOf(bot("iris")).some(({ account }) => account.id === "ca_pc"), false);
+    state.account = { user: { id: "another-owner" } };
+    assert.equal((await (await catalog.GET()).json()).available, false);
+    assert.equal(C.accountsOf(bot("boppy")).some(({ account }) => account.id === "ca_pc"), false);
+  } finally {
+    delete process.env.BOPS_UI_TOKEN;
+    delete state.account;
+    globalThis.fetch = fetchBefore;
+    Object.assign(cloud, was);
+    provider.made = () => {};
+    provider.client.connectedAccounts.link = linkBefore;
   }
 });
 

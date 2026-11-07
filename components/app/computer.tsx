@@ -1,5 +1,6 @@
 "use client";
 
+import { WINDOWS } from "@/lib/platform";
 import { useEffect, useRef, useState } from "react";
 import { BLOCKER_LABEL, computerAsleep, computerCheckMs, computerInUse, DISPLAYS, isScreenWatch, live, streamsLive, workBot, workspaceOf, type AppState, type Bot, type Session } from "@/lib/types";
 import { freeComputerOpen, ownIsBops, setupShort } from "@/lib/orgo-plans";
@@ -1282,7 +1283,7 @@ function NoComputer({ state, bot: b, host }: { state: AppState; bot: Bot; /** Th
           className="max-w-[320px]"
           text={
             noRoom.short === "none"
-              ? `${noRoom.text} Until then, your bots can work on this Mac (Settings, Where your bots work).`
+              ? WINDOWS ? noRoom.text : `${noRoom.text} Until then, your bots can work on this Mac (Settings, Where your bots work).`
               : host.isMain
                 ? noRoom.text
                 : `${b.name} will work on the main bot's computer instead. ${noRoom.text}`
@@ -1396,7 +1397,7 @@ export function ComputerSummary({ state, bot: b, className = "", onOpen }: { sta
         <span className="text-[13px] font-semibold leading-4">Computer</span>
         <span className="truncate text-[12px] leading-4 text-[#6B6B6B]">
           {mac
-            ? "Browsers on this Mac"
+            ? (WINDOWS ? "Podman Local VM on this PC" : "Browsers on this Mac")
             : state.shared && b.runsOn === "mac"
               ? `Works on ${yourMac(state)}`
               : b.isMain

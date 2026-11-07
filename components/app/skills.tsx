@@ -1,5 +1,6 @@
 "use client";
 
+import { FILE_MANAGER } from "@/lib/platform";
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { appsOwnShown } from "@/lib/apps-access";
 import { builtinLabels, builtinSkills, type BuiltinSkill } from "@/lib/builtin-skills";
@@ -16,7 +17,7 @@ import { CloseButton, currentWorkspace, post, teamOf } from "./ui";
  * (memory-categories.tsx): its chip opens a page (SkillsPage) in the Knowledge tab with the skills under
  * their labels (lib/skill-labels.ts), Bops' own labels first, each a heading that folds; one opens in place:
  * its SKILL.md and files, its label (a chip to move it; Bops' suggestion says auto, with Confirm and Change), which bots have it, its versions (Publish, Roll
- * back), its scripts to approve, Open in Finder, Update from folder and Delete. Bops' own skills open read only.
+ * back), its scripts to approve, Open in {FILE_MANAGER}, Update from folder and Delete. Bops' own skills open read only.
  * Import folder takes a folder picked in Finder through the Mac app. Who has what (the owner's, in the window)
  * is a grid of the workspace's labels by its bots: a tick gives a bot every skill in that label
  * (Bot.skillLabels, lib/skill-labels.ts botHasSkill), a label opens to its skills, where a skill naming its own
@@ -236,7 +237,7 @@ export function SkillsPage({ state, only, focus, focusAt, nav, onClose }: { stat
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="text-[20px] font-semibold leading-6 tracking-[-0.01em]">{only === "app" ? "Apps" : "Skills"}</span>
             <span className="text-[13px] leading-[19px] text-[#6B6B6B]">
-              {about} {orgo ? "Kept in step with Orgo." : "Kept on this Mac."}
+              {about} {orgo ? "Kept in step with Orgo." : "Kept on this computer."}
             </span>
           </div>
           <CloseButton onClick={onClose} className="mt-1.5" />
@@ -414,7 +415,7 @@ function LabelChip({ label, labels, busy, auto, onPick }: { label: string; label
       </button>
       {auto && (
         <>
-          <span className={CHIP} data-tip="Bops picked this label. It stays on this Mac until you confirm it">
+          <span className={CHIP} data-tip="Bops picked this label. It stays on this computer until you confirm it">
             auto
           </span>
           <button type="button" disabled={busy} data-label-confirm onClick={() => onPick(label)} className="text-[12px] font-medium leading-4 text-ink disabled:opacity-50">
@@ -664,7 +665,7 @@ function SkillView({
         )}
         {reveal && detail?.dir && !detail.missing && (
           <button onClick={() => void reveal(detail.dir!)} className={`${PILL} bg-[#F2F2F0] hover:bg-[#EAEAE7]`}>
-            Open in Finder
+            Open in {FILE_MANAGER}
           </button>
         )}
         {picker && !version && (
@@ -756,7 +757,7 @@ function SkillView({
           </span>
         )
       ) : detail.missing ? (
-        <span className="text-[13px] leading-[19px] text-[#6B6B6B]">Its folder isn&apos;t on this Mac.</span>
+        <span className="text-[13px] leading-[19px] text-[#6B6B6B]">Its folder isn&apos;t on this computer.</span>
       ) : (
         <>
           {detail.files.length > 0 && (

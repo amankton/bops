@@ -16,10 +16,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { unfaked } from "./fake-exports.mjs";
 
-const root = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
+const root = fileURLToPath(new URL("..", import.meta.url));
 
 const FAKES = { store: ["bot", "getState", "pullState", "stateEpoch", "statePulledAt", "update", "userDir"], orgo: ["apiKey", "callOrgo"] };
 registerHooks({

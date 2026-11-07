@@ -1,3 +1,4 @@
+import { WINDOWS } from "@/lib/platform";
 import { mayAskIn, ownMemory, teamIn, worksForNow } from "@/lib/chain";
 import { mailRule, type MailRule } from "@/lib/permission";
 import { AGENTS, aiOf } from "@/lib/agents";
@@ -111,7 +112,7 @@ export const SETTINGS_WORDS = {
   answersOn: (number: string) => `Picks up when anyone calls ${number}.`,
   answersOnYou: (number: string) => `Picks up when you call ${number}. Someone else calls is off, so anyone else hears a short no.`,
   answersOff: (name: string) => `When you call, you hear that ${name} isn't taking calls and can text instead. Anyone else hears a short no.`,
-  cloudStillAnswers: "While your Mac is away, Bops Cloud still answers.",
+  cloudStillAnswers: WINDOWS ? "While your PC is offline, Bops Cloud still answers." : "While your Mac is away, Bops Cloud still answers.",
   // Contact
   phone: "Phone",
   noneYet: "None yet",
@@ -126,7 +127,7 @@ export const SETTINGS_WORDS = {
   // Saving
   failed: "That didn't save. Try again.",
   offline: "Couldn't reach Bops. Try again.",
-  olderBops: "One of your Macs runs an older Bops. These settings hold there once it updates.",
+  olderBops: WINDOWS ? "One of your computers runs an older Bops. These settings apply there once it updates." : "One of your Macs runs an older Bops. These settings hold there once it updates.",
 };
 
 /** "+15551230142" → "+1 (555) 123 0142": the page writes numbers with spaces, as its mockups do. */

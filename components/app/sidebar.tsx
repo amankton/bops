@@ -1,5 +1,6 @@
 "use client";
 
+import { DESKTOP_NAME, SHORTCUT_MODIFIER } from "@/lib/platform";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { dropCitations, plainText } from "@/lib/plain-words";
 import { apiCallOf, callsSaid, lastCalls } from "./keys";
@@ -269,7 +270,7 @@ export function Sidebar({
           {onCollapse && (
             <button
               onClick={onCollapse}
-              title="Collapse the sidebar (⌘\)"
+              title={`Collapse the sidebar (${SHORTCUT_MODIFIER}\\)`}
               aria-label="Collapse the sidebar"
               className="flex size-[34px] shrink-0 items-center justify-center rounded-full hover:bg-black/[0.05]"
             >
@@ -616,8 +617,8 @@ export function YouMenuView({
             shut();
             onSetup();
           }}
-          title="Something on this Mac needs you"
-          aria-label="Something on this Mac needs you"
+          title={`Something on this ${DESKTOP_NAME} needs you`}
+          aria-label={`Something on this ${DESKTOP_NAME} needs you`}
           className="motion-dot-in absolute -bottom-0.5 -left-0.5 rounded-full shadow-[0_0_0_2px_#F9F9F8]"
         >
           <NeedsYouDot />
@@ -663,7 +664,7 @@ export function YouMenuView({
               <rect x="1.8" y="2.8" width="12.4" height="8.4" rx="1.4" fill="none" stroke="#0A0A0A" strokeWidth="1.4" />
               <path d="M5.8 13.6h4.4" fill="none" stroke="#0A0A0A" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
-            <span className="flex-1">Permissions on this Mac</span>
+            <span className="flex-1">Permissions on this {DESKTOP_NAME}</span>
             {needsYou && <NeedsYouDot />}
           </button>
           {canRestart &&

@@ -342,6 +342,7 @@ async function answersWaiting(): Promise<Map<string, AppApproval[]>> {
   for (const a of theirs) {
     const computer = runnerComputerOf(a.askedBy);
     const t = a.threadId ? session(a.threadId) : undefined;
+    if (getState().desktopRoutineDevice && (a.routineId || t?.routineId)) continue;
     if (!computer || (a.threadId && (!t || !live(t) || t.by !== a.askedBy))) continue;
     out.set(computer, [...(out.get(computer) ?? []), a]);
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { SHORTCUT_MODIFIER, WINDOWS, YOUR_COMPUTER } from "@/lib/platform";
 import { screenMap, screenNo } from "@/lib/screens";
 import { askKind, chatAsks } from "@/lib/asks";
 import { alwaysScope, apiDeletes, apiFacts, askHeadline, taskWrite } from "@/lib/permission";
@@ -13,7 +14,7 @@ import { appCoders } from "@/lib/hosted-apps";
 import { appsShown } from "@/lib/apps-access";
 import { appsOwnShown } from "@/lib/apps-access";
 import { crmOpen } from "@/lib/crm-access";
-import { ANSWER_WAITS_LINE, REPLY_WAITS_LINE, askAnswerer, canAct, computerLine, isViewerOwn, ownerWho, readOnly, saidBy, saidName, screenAskMine, tellsThread, threadAnswerer, whereAnswerer, writesThread } from "@/lib/shared";
+import { ANSWER_WAITS_LINE, REPLY_WAITS_LINE, askAnswerer, canAct, computerLine, isViewerOwn, ownerWho, readOnly, saidBy, saidName, screenAskMine, tellsThread, threadAnswerer, whereAnswerer, writesThread, yourMac } from "@/lib/shared";
 import { memberAct } from "./shared-act";
 import { MEMBER_STOP_MAX } from "@/cloud/protocol";
 import { CrmNote } from "./crm";
@@ -32,10 +33,10 @@ import { num, privacyOf } from "@/lib/privacy";
 import { compactBlocked } from "@/lib/chat-summary";
 import { ApiAsk, apiAskOf, apiCallOf, ApiCalls, ApiNote, KeyAskCard, oneLine, quietCall, type ApiCall } from "./keys";
 import { BrainBadge, brainSignIn, openInTerminal, threadBadge } from "./brains";
-import { AGENTS, aiOf, hasProfile, isCli, threadAgent, upper } from "@/lib/agents";
+import { AGENTS, aiOf, hasProfile, isCli, isDesktopAgent, threadAgent, upper } from "@/lib/agents";
 import { AgentChip, AgentMark } from "./agent-marks";
 import { threadAgentWords, threadKind } from "./bot-ai";
-import { AgentChipPick, boxAgents, pickLine, useBotKeys } from "./new-thread";
+import { AgentChipPick, boxAgents, pickLine, useBotKeys, useDesktopComposerStatuses } from "./new-thread";
 import { AskInPlace, ChatAvatar, chatName, clockTime, memberAnswers, needsYou, post, ReadOnlyLine, StatusIcon, teamOf, useNow } from "./ui";
 import { ReplyDrafts } from "./reply-drafts";
 import { dropCitations, isLocalLink, isTableRow as isRow, isTableRule as isRule, localOnlyLine, plainStep, plainTitle, tableCells as cells } from "@/lib/plain-words";
@@ -57,7 +58,7 @@ function repliedToWho(m: Message, state: AppState): string {
 }
 
 /** Whose Mac a thread runs on or could move to, the same way: "Your Mac", or the owner's in a shared workspace. */
-const ownerMac = (state: AppState) => (state.shared ? "Owner's Mac" : "Your Mac");
+const ownerMac = (state: AppState) => (state.shared ? "Owner's computer" : YOUR_COMPUTER);
 /** What a blocked thread needs (BLOCKER_ASK says it of the user), of the owner in a shared workspace. */
 const OWNER_BLOCKER_ASK: Record<Blocker, string> = {
   sign_in: "the owner to sign in",
@@ -446,10 +447,10 @@ export function ChatView({
   const [allAsks, setAllAsks] = useState(false);
   const shownAsks = allAsks ? threadAsks : threadAsks.slice(0, 2);
   const solo = c.kind === "bot" ? members[0] : undefined;
-  // The agent picked in the box: only one the bot can run now (else its Default, which the chip shows as it is).
-  // A pick that isn't ready anymore is never sent, and is let go as the next message goes.
   const boxKeys = useBotKeys(state, solo);
-  const picked = solo && agentPicks[c.id] ? boxAgents(state, solo, agentPicks[c.id], boxKeys).picked : undefined;
+  const desktopStatuses = useDesktopComposerStatuses(state, solo);
+  const composerAgents = solo && boxAgents(state, solo, agentPicks[c.id] ?? null, boxKeys, desktopStatuses);
+  const picked = composerAgents?.picked;
   const dropPick = () =>
     setAgentPicks((p) => {
       const next = { ...p };
@@ -649,6 +650,10 @@ export function ChatView({
   const send = async () => {
     const text = draft.trim();
     if (!text && !attaching.length) return;
+    if (!state.shared && composerAgents && isDesktopAgent(composerAgents.now)) {
+      const status = composerAgents.unavailable(composerAgents.now);
+      if (status) return setMicError(status.detail);
+    }
     // In a shared workspace (the viewer has Write on every bot here): their words, and the files they put on the owner's
     // computer, go to the owner's Bops through Bops Cloud (shared-act.ts), shown as theirs at once. Pictures for the model
     // stay on this Mac (view-only.ts uploads): the box adds them as files here.
@@ -701,8 +706,7 @@ export function ChatView({
     };
     setPending((p) => [...p, mine]);
     setSent((s) => [...s.slice(-19), { chatId: c.id, text, at: mine.at }]);
-    // Only a pick the bot can run now goes; one that can't anymore is let go (boxAgents).
-    const pick = solo && agentPicks[c.id] ? boxAgents(state, solo, agentPicks[c.id], boxKeys).picked?.id : undefined;
+    const pick = picked?.id;
     if (agentPicks[c.id] && !pick) dropPick();
     const chatId = c.id;
     const replyTo = replying?.id;
@@ -1014,7 +1018,7 @@ export function ChatView({
               <div className="absolute inset-0 bg-gradient-to-t from-white from-45% via-white/80 via-75% to-white/0" />
             </div>
           {/* The viewer's own credit, which a shared workspace's bots (the owner's) don't run on. */}
-          {state.credits?.out && !state.shared && <OutOfCredit credits={state.credits} onUpgrade={onUpgrade} />}
+          {state.credits?.out && !state.shared && !(composerAgents && isDesktopAgent(composerAgents.now)) && <OutOfCredit credits={state.credits} onUpgrade={onUpgrade} />}
           {(appAsks.length > 0 || threadAsks.length > 0) && (
             <div className="mb-2.5 flex max-h-[45vh] flex-col gap-2 overflow-y-auto">
               {/* A shared workspace's asks are the owner's to answer, but for a bot the viewer has at Write: shown, answered only then. */}
@@ -1177,6 +1181,7 @@ export function ChatView({
                 state={state}
                 bot={solo}
                 keys={boxKeys}
+                desktop={desktopStatuses}
                 value={picked?.id ?? null}
                 onPick={(id) =>
                   setAgentPicks((p) => {
@@ -1906,10 +1911,10 @@ function MessageRow({ m, state, showSender, continued, sessionById, chipIds, onO
         .filter((s) => s.askWhere && live(s))
         .map((s) => (
           <div key={`${s.id}-where`} className="flex gap-1.5 pl-1">
-            <button onClick={() => void post(`/api/sessions/${s.id}/where`, { to: "mac" })} className="flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[12.5px] font-medium leading-4 text-white">
+            {!WINDOWS && <button onClick={() => void post(`/api/sessions/${s.id}/where`, { to: "mac" })} className="flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[12.5px] font-medium leading-4 text-white">
               <MacIcon size={13} />
               On your Mac
-            </button>
+            </button>}
             <button onClick={() => void post(`/api/sessions/${s.id}/where`, { to: "cloud" })} className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[12.5px] font-medium leading-4 shadow-[0_0_0_1px_#E2E2DF] hover:bg-[#F7F7F6]">
               <CloudIcon />
               In the cloud
@@ -1917,7 +1922,7 @@ function MessageRow({ m, state, showSender, continued, sessionById, chipIds, onO
           </div>
         ))}
       {/* The bot (or someone's words) suggested the Mac, but the user didn't ask: nothing moves until they say so (sessions.ts offerMove). Only while it runs (once it's over, a move would do it all again), and not while its card above offers Try on your Mac. */}
-      {!ro && chips
+      {!WINDOWS && !ro && chips
         .filter((s) => s.offerMac && live(s) && s.runsOn !== "mac" && state.mac?.ready && !(needsYou(s) && (s.blocker || s.status === "failed")))
         .map((s) => (
           <div key={`${s.id}-move`} className="flex gap-1.5 pl-1">
@@ -2469,7 +2474,7 @@ function SessionChip({ session: s, state, onClick }: { session: Session; state: 
       <span className={`truncate text-[14px] leading-[18px] ${live(s) || waiting ? "text-ink" : "text-[#6B6B6B]"}`}>{plainTitle(s.title)}</span>
       {/* Where it runs: the user's Mac (the owner's, in a shared workspace) or the cloud (deciding: nothing yet). */}
       {s.runsOn === "mac" ? (
-        <span title={`On ${state.shared ? "the owner's" : "your"} Mac`} className="flex shrink-0 items-center gap-1 rounded-full bg-[#F2F2F0] px-1.5 py-px text-[11px] leading-[14px] text-[#3A3A38]">
+        <span title={`On ${yourMac(state)}`} className="flex shrink-0 items-center gap-1 rounded-full bg-[#F2F2F0] px-1.5 py-px text-[11px] leading-[14px] text-[#3A3A38]">
           <MacIcon size={11} />
           {ownerMac(state)}
         </span>
@@ -2632,7 +2637,7 @@ export function ThreadSheet({
             </div>
             {agentPays && <span className="text-[12px] leading-4 text-[#6B6B6B]">{agentPays}</span>}
             <button onClick={onShowComputer} className="flex items-center gap-1.5 text-left text-[12px] leading-4 text-[#6B6B6B] hover:text-ink">
-              {b.name} · {s.runsOn === "mac" ? `on ${state.shared ? "the owner's" : "your"} Mac · ` : ""}
+              {b.name} · {s.runsOn === "mac" ? `on ${yourMac(state)} · ` : ""}
               {terminal !== undefined ? "in the terminal" : s.askWhere && live(s) ? `waiting for ${ownerYou(state)}` : live(s) ? "working" : s.status === "done" ? "finished" : "stopped"} · {toolCount} steps
               {/* Its screen, by the number the panel and the bots use. */}
               {s.runsOn !== "mac" && (live(s) && s.display !== undefined ? ` · screen ${screenNo(s.display)}` : !live(s) && s.lastDisplay !== undefined ? ` · left off on screen ${screenNo(s.lastDisplay)}` : "")}
@@ -2640,7 +2645,7 @@ export function ThreadSheet({
           </div>
           {/* A shared workspace's thread is the owner's: nothing here moves, stops, deletes or saves it. */}
           {/* Not for a run waiting for your OK: its card answers it where it runs. */}
-          {!state.shared && s.runsOn !== "mac" && state.mac?.ready && !waitsForOk(s, state) && (s.blocker || s.status === "failed" || (s.offerMac && live(s))) && (
+          {!WINDOWS && !state.shared && s.runsOn !== "mac" && state.mac?.ready && !waitsForOk(s, state) && (s.blocker || s.status === "failed" || (s.offerMac && live(s))) && (
             <button
               onClick={() => void post(`/api/sessions/${s.id}/where`, { move: true })}
               title="Do this on your Mac instead, on your home internet"
@@ -2868,8 +2873,10 @@ export function ThreadSheet({
         ) : !writesThread(state, s) ? (
           // With Write on its bot, but it runs on the owner's Mac: a member's words never reach work there (Bops Cloud refuses them).
           <div data-read-only className="mx-3 mb-3 rounded-[14px] bg-[#F7F7F5] px-3.5 py-2.5 text-center text-[13px] leading-[18px] text-[#6B6B6B]">
-            This runs on the owner&apos;s Mac. Only the owner can tell it more.
+            This runs on the owner&apos;s computer. Only the owner can tell it more.
           </div>
+        ) : s.pcTask ? (
+          <p className="px-3 pb-3 text-[12px] text-pencil">Start a new PC thread to follow up on this task.</p>
         ) : (
         <form
           onSubmit={(e) => {
@@ -3035,7 +3042,7 @@ export function ToPicker({ state, onOpenChat, onCancel }: { state: AppState; onO
 function Kbd({ n }: { n: number }) {
   return (
     <span className="flex gap-[3px]">
-      <span className="rounded-[5px] bg-white px-1.5 py-0.5 text-[11px] leading-[14px] text-[#6B6B6B] shadow-[0_0_0_1px_#E2E2DF]">⌘</span>
+      <span className="rounded-[5px] bg-white px-1.5 py-0.5 text-[11px] leading-[14px] text-[#6B6B6B] shadow-[0_0_0_1px_#E2E2DF]">{SHORTCUT_MODIFIER}</span>
       <span className="rounded-[5px] bg-white px-1.5 py-0.5 font-mono text-[11px] leading-[14px] text-[#6B6B6B] shadow-[0_0_0_1px_#E2E2DF]">{n}</span>
     </span>
   );
@@ -3171,7 +3178,7 @@ function NeedsYouCard({
     setBusy(false);
   };
   // The user's own Mac (state.mac): never where a shared workspace's thread goes.
-  const toMac = s.runsOn !== "mac" && !!state.mac?.ready && !state.shared;
+  const toMac = !WINDOWS && s.runsOn !== "mac" && !!state.mac?.ready && !state.shared;
   // Dismiss means done with it: the thread stops and never asks again.
   const dismiss = () => {
     setBusy(true);

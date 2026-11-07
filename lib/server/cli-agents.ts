@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { AGENTS, agentLabel, aiOf, isCli, keyVendor, ROUTE_NAMES, shellLabel, threadAgent, type AgentRun } from "@/lib/agents";
+import { AGENTS, agentLabel, aiOf, isCli, isDesktopAgent, keyVendor, ROUTE_NAMES, shellLabel, threadAgent, type AgentRun } from "@/lib/agents";
 import { shownAddress } from "@/lib/plain-words";
 import { redactDeep } from "@/lib/secret-patterns";
 import { BRAINS_ON, CLI_NAMES, live, planName, workspaceOf, type Bot, type Brain, type CliKind } from "@/lib/types";
@@ -449,7 +449,7 @@ const safe = (v: string | undefined) => (v && /^[A-Za-z0-9._:/-]+$/.test(v) ? v 
 /** The bot's CLI agents but `except`, for its wrappers (bops-brain --also: "claude:plan:<account>:<model>,codex:key:<account>:"). */
 export function alsoSpec(b: Bot, except?: string) {
   return aiOf(b, getState())
-    .agents.filter((x) => isCli(x.kind) && x.id !== except)
+    .agents.filter((x) => isCli(x.kind) && !isDesktopAgent(x) && x.id !== except)
     .map((x) => `${x.kind}:${x.pays}:${safe(x.account) ?? "-"}:${safe(x.model) ?? ""}`)
     .filter((x) => /^[a-z]+:[a-z]+:[A-Za-z0-9_-]+:[A-Za-z0-9._:/-]*$/.test(x))
     .join(",");

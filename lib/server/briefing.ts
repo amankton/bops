@@ -19,7 +19,7 @@ export async function computerBriefing(botId: string, opts: { thread?: string; s
   if (!b) return "";
   const state = getState();
   const owner = ownerName();
-  const mac = state.host === "mac";
+  const mac = state.host === "mac" && process.platform !== "win32";
   // The computer it works on: its own, or the main bot's when it shares.
   const c = workComputer(b);
   const shared = c.id !== b.id;
@@ -108,7 +108,7 @@ export async function computerBriefing(botId: string, opts: { thread?: string; s
     ...(appsOpen(state) ? ["Never start, stop or restart another site's Local, and never kill a process on a port that isn't your site's."] : []),
   ].join(" ");
 
-  const ownersMac = await macBriefing(botId);
+  const ownersMac = process.platform === "win32" ? "" : await macBriefing(botId);
   return [
     `${shared ? `The computer you share with ${c.name}` : "Your computer"}${mac ? ` (browsers on ${owner}'s Mac)` : ""}, as of now:`,
     ...lines,
@@ -163,7 +163,7 @@ export function teamBriefing(leadId: string, seen?: ReadonlySet<string>) {
   if (!others.length) return lead?.isMain ? "Your team: just you so far." : "";
   const now = Date.now();
   const owner = ownerName();
-  const where = (s: Session) => (s.runsOn === "mac" ? `on ${owner}'s Mac` : s.askWhere ? `waiting for ${owner} to pick Mac or cloud` : "in the cloud");
+  const where = (s: Session) => (s.runsOn === "mac" ? `on ${owner}'s computer` : s.askWhere ? `waiting for ${owner} to choose local or cloud` : "in the cloud");
   const lines = others.map((b) => {
     const mine = state.sessions.filter((s) => s.botId === b.id);
     const running = mine.filter(live);
@@ -183,7 +183,7 @@ export function teamBriefing(leadId: string, seen?: ReadonlySet<string>) {
     const c = workComputer(b);
     const computer = c.id !== b.id ? `Works on ${host}.` : c.computerStatus === "ready" ? "" : c.computerStatus === "cloning" ? "Its computer is being set up." : "No computer yet.";
     return [
-      `- ${b.name} (${b.role}${b.runsOn && b.runsOn !== "auto" ? `, works on ${b.runsOn === "mac" ? `${owner}'s Mac` : "the cloud"}` : ""}):`,
+      `- ${b.name} (${b.role}${b.runsOn && b.runsOn !== "auto" ? `, works on ${b.runsOn === "mac" ? `${owner}'s computer` : "the cloud"}` : ""}):`,
       doing.length ? `working on ${doing.join("; ")}.` : "free.",
       watching.length ? `Watching ${watching.join(", ")}.` : "",
       alerts.length ? `Waiting on ${owner}: ${alerts.join("; ")}.` : "",

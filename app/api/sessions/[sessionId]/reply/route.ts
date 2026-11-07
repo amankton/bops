@@ -12,6 +12,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sessions/[s
   const { text } = (await request.json()) as { text?: string };
   const s = session(sessionId);
   if (!s) return Response.json({ error: "no such thread" }, { status: 404 });
+  if (s.pcTask) return Response.json({ error: "Start a new PC thread to follow up on this task." }, { status: 409 });
   if (!text?.trim()) return Response.json({ error: "empty reply" }, { status: 400 });
   // "Keep an eye on this" becomes a watch on the thread's screen instead of the thread checking itself.
   // Not one of the thread's own next steps the user picked: it offered to do that, so it does it.

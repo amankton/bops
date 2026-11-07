@@ -80,7 +80,10 @@ function PlainMark({ size = 16 }: Size) {
   );
 }
 
-const MARKS: Record<AgentKind, (p: Size) => React.ReactElement> = { bops: OpenAiMark, claude: ClaudeMark, codex: CodexMark, opencode: OpenCodeMark, agy: AgyMark };
+function HermesMark({ size = 16 }: Size) {
+  return <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden><rect x="1" y="1" width="22" height="22" rx="7" fill="#B88A40" /><path d="M7 6v12m10-12v12M7 12h10" stroke="white" strokeWidth="2" /></svg>;
+}
+const MARKS: Record<AgentKind, (p: Size) => React.ReactElement> = { bops: OpenAiMark, claude: ClaudeMark, codex: CodexMark, opencode: OpenCodeMark, agy: AgyMark, hermes: HermesMark };
 
 /** How a thread is, for the dot on its mark: herdr's words, worst first. */
 export type MarkState = "needs" | "failed" | "working" | "done";

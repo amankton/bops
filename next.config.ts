@@ -6,7 +6,7 @@ import type { NextConfig } from "next";
 const { version } = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as { version: string };
 
 const nextConfig: NextConfig = {
-  env: { BOPS_APP_VERSION: version },
+  env: { BOPS_APP_VERSION: version, NEXT_PUBLIC_BOPS_PLATFORM: process.platform },
   // A second app from this folder at once (the local two-person stack, scripts/dev-two-person.mjs) builds into a
   // folder of its own, as next dev locks its own. Unset, as everywhere else, it's Next's .next.
   ...(process.env.BOPS_NEXT_DIST_DIR ? { distDir: process.env.BOPS_NEXT_DIST_DIR } : {}),
@@ -43,6 +43,8 @@ const nextConfig: NextConfig = {
   // the built server, node_modules and the files above ship: never source, docs, the encrypted
   // envs/, local state or the desktop build itself.
   outputFileTracingExcludes: {
+    // Instrumentation's entry name has no leading slash, so the route glob below does not match it.
+    instrumentation: ["./dist-desktop/**", "./dist-runner/**", "./.scratch/**", "./.data/**", "./.env*", "./envs/**", "./.git/**", "./.github/**", "./docs/**", "./vendor/**"],
     "/*": [
       "./.data/**",
       "./.env*",

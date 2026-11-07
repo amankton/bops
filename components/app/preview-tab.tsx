@@ -1,5 +1,6 @@
 "use client";
 
+import { SHORTCUT_MODIFIER } from "@/lib/platform";
 import { createElement, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { captureRect, fixAsk, goBackTo, MAX_PICKS, OFF_SCRIPT, pickAnswerOf, pickCode, pickLine, PLACE_NAMES, PLACES, placesOf, readWidth, SELECT_SCRIPT, WIDTHS, writeWidth, type LocalFacts, type PageAnswer, type Place, type Width } from "@/lib/app-preview";
 import { localsOf, type LocalAnswer, type LocalSite } from "@/lib/hosted-apps";
@@ -552,7 +553,7 @@ export function PreviewTab({
           {ask && !failed && hid !== page && <div className="absolute inset-x-3 bottom-3 flex justify-center">{panel}</div>}
           {tool === "select" && (
             <span data-preview-hint className="pointer-events-none absolute left-1/2 top-3 w-max max-w-[calc(100%-24px)] -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-center text-[12px] leading-4 text-white shadow-[0_8px_24px_-12px_#00000080]">
-              Click what you mean. Cmd click adds more. Esc to stop.
+              Click what you mean. {SHORTCUT_MODIFIER}+click adds more. Esc to stop.
             </span>
           )}
           {tool === "draw" && <DrawLayer onDone={drawn} onCancel={() => setTool(null)} error={toolError} />}

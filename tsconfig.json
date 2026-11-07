@@ -32,5 +32,5 @@
     ".scratch/next-sam/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "cloud"]
+  "exclude": ["node_modules", "cloud", "dist-desktop"]
 }

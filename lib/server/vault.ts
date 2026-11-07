@@ -132,7 +132,7 @@ export async function signInWith(botId: string, display: number, loginId: string
   const b = bot(botId);
   const l = logins().find((x) => x.id === loginId);
   if (!b || !l) throw new Error("no such login");
-  if (onRunner()) throw new Error("saved logins work only from the Bops app on your Mac");
+  if (onRunner()) throw new Error("Saved logins require the Bops desktop app.");
   if (!mayUse(l, botId)) throw new Error(`${b.name} isn't allowed to use this login`);
   const lock = `${botId}:${display}`;
   if (signingIn.has(lock)) return { signedIn: false, busy: true, read: getState().screens?.[lock] };

@@ -142,7 +142,7 @@ export function routinePayload(r: Routine) {
     ...(r.source ? { source: { app: cleanText(r.source.app, 128), template: cleanText(r.source.template, 128) } } : {}),
     ...(tags?.length ? { tags } : {}),
     ...(d ? { delivery: d.kind === "channel" ? { kind: d.kind, linkId: cleanText(d.linkId, 200), ...(d.chat ? { chat: cleanText(d.chat, 200) } : {}) } : d } : {}),
-    ...(iso(r.nextRunAt) && !waitsForOk(r) ? { nextRunAt: iso(r.nextRunAt) } : {}),
+    ...(!getState().desktopRoutineDevice && iso(r.nextRunAt) && !waitsForOk(r) ? { nextRunAt: iso(r.nextRunAt) } : {}),
     ...(lastRunAt ? { lastRunAt } : {}),
     ...(r.last ? { lastStatus: orgoStatus(r.last.status) } : {}),
     ...(s.schedule.kind === "before_event" && iso(r.eventsThrough) ? { eventsThrough: iso(r.eventsThrough) } : {}),
@@ -388,7 +388,7 @@ function restoreRuns() {
  */
 export function routineRan(routineId: string, run: RoutineRun, said?: string) {
   try {
-    if (run.status === "running") return;
+    if (run.status === "running" || getState().desktopRoutineDevice) return;
     const r = getState().routines.find((x) => x.id === routineId);
     const at = r && projectOfBot(r.botId);
     if (!at || routesMissing(at.projectId)) return;
